@@ -1,5 +1,9 @@
 #include "reporter.h"
 #include <iostream>
+#include <vector> // Added for std::vector
+#include <string> // Added for std::string
+#include <array>  // Added for std::array
+#include <algorithm> // Added for std::copy
 
 Reporter::Reporter()
 {
@@ -104,18 +108,29 @@ Reporter::Reporter(std::string filename,
                 H5P_DEFAULT, H5P_DEFAULT);
 
 
-    double positions[lattice.getAtoms().size()][3];
-    const char *types[lattice.getAtoms().size()];
-    int i = 0;
-    for(auto& atom : lattice.getAtoms())
+    // Use std::vector for dynamic allocation on the heap
+    size_t num_atoms = lattice.getAtoms().size();
+    std::vector<std::array<double, 3>> positions_vec(num_atoms);
+    std::vector<std::string> types_str_vec(num_atoms); // To store string data
+    std::vector<const char*> types_ptr_vec(num_atoms); // To store pointers for HDF5
+
+    const auto& atoms_ref = lattice.getAtoms(); // Avoid multiple calls to getAtoms()
+    for (size_t j = 0; j < num_atoms; ++j)
     {
-        std::copy(std::begin(atom.getPosition()), std::end(atom.getPosition()), positions[i]);
-        types[i] = atom.getType().c_str();
-        i++;
+        const auto& atom = atoms_ref[j];
+        // Assuming atom.getPosition() returns an iterable range of 3 doubles
+        // or a type convertible/copyable to std::array<double, 3>
+        auto pos_iterable = atom.getPosition();
+        std::copy(std::begin(pos_iterable), std::end(pos_iterable), positions_vec[j].begin());
+        
+        types_str_vec[j] = atom.getType(); // Assuming atom.getType() returns std::string
+        types_ptr_vec[j] = types_str_vec[j].c_str(); // Pointers are valid as types_str_vec owns the strings
     }
 
-    this -> status = H5Dwrite(types_dset, memtype, H5S_ALL, H5S_ALL, H5P_DEFAULT, types);
-    this -> status = H5Dwrite(position_dset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, positions);
+    this -> status = H5Dwrite(types_dset, memtype, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                               num_atoms > 0 ? types_ptr_vec.data() : nullptr);
+    this -> status = H5Dwrite(position_dset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                               num_atoms > 0 ? positions_vec[0].data() : nullptr);
     this -> status = H5Dwrite(temps_dset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, temps.data());
     this -> status = H5Dwrite(fields_dset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, fields.data());
 
