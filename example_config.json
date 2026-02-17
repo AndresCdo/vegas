@@ -1,0 +1,19 @@
+{
+  "sample": "ferromagnetic_sample",
+  "mcs": 10000,
+  "kb": 1.0,
+  "seed": 12345,
+  "temperature": {
+    "start": 0.1,
+    "final": 5.0,
+    "points": 50
+  },
+  "field": {
+    "start": 0.0,
+    "final": 2.0,
+    "points": 20
+  },
+  "out": "ferromagnetic_results.h5",
+  "initialstate": "initial_spins.txt",
+  "anisotropy": "anisotropy_terms.txt"
+}

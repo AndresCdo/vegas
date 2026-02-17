@@ -73,6 +73,27 @@ Lattice::~Lattice()
 
 }
 
+// Move constructor
+Lattice::Lattice(Lattice&& other) noexcept
+    : atoms_(std::move(other.atoms_)),
+      mapTypeIndexes_(std::move(other.mapTypeIndexes_)),
+      mapIndexTypes_(std::move(other.mapIndexTypes_)),
+      sizesByIndex_(std::move(other.sizesByIndex_))
+{
+}
+
+// Move assignment operator
+Lattice& Lattice::operator=(Lattice&& other) noexcept
+{
+    if (this != &other) {
+        atoms_ = std::move(other.atoms_);
+        mapTypeIndexes_ = std::move(other.mapTypeIndexes_);
+        mapIndexTypes_ = std::move(other.mapIndexTypes_);
+        sizesByIndex_ = std::move(other.sizesByIndex_);
+    }
+    return *this;
+}
+
 std::vector<Atom>& Lattice::getAtoms()
 {
     return this -> atoms_;

@@ -12,6 +12,14 @@ class Lattice
 public:
     Lattice(std::string fileName);
     ~Lattice();
+    
+    // Move constructor and assignment
+    Lattice(Lattice&& other) noexcept;
+    Lattice& operator=(Lattice&& other) noexcept;
+    
+    // Delete copy constructor and assignment
+    Lattice(const Lattice&) = delete;
+    Lattice& operator=(const Lattice&) = delete;
 
     std::vector<Atom>& getAtoms();
 

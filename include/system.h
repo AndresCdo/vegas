@@ -18,6 +18,14 @@ public:
            std::string outName,
            Real kb);
     ~System();
+    
+    // Move constructor and assignment
+    System(System&& other) noexcept;
+    System& operator=(System&& other) noexcept;
+    
+    // Delete copy constructor and assignment
+    System(const System&) = delete;
+    System& operator=(const System&) = delete;
 
     void ComputeMagnetization();
     Real localEnergy(Index index, Real H);

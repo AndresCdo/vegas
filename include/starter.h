@@ -2,8 +2,10 @@
 #define STARTER_H
 
 #include "params.h"
-#include "system.h"
 #include "rlutil.h"
+
+// Forward declaration to break circular dependency
+class System;
 
 #include <iostream>
 #include <fstream>
@@ -24,7 +26,7 @@ namespace STARTER {
 
     // Fn case that the initial state is given,
     // this function checks if the file exists.
-    void CHECKFILE(std::string filename);
+    void CHECKFILE(const std::string& filename);
 
 
 

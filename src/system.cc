@@ -6,6 +6,7 @@
 #include <sstream>
 #include "../include/rlutil.h"
 #include <functional>
+#include <stdexcept>
 
 // Message to exit and launch an error.
 void EXIT(std::string message)
@@ -15,6 +16,29 @@ void EXIT(std::string message)
     std::cout << "Unsuccesful completion !!!" << std::endl;
     rlutil::resetColor();
     exit(EXIT_FAILURE);
+}
+
+// Safe conversion from string to double with error handling
+Real safe_stod(const std::string& str, const std::string& context = "")
+{
+    try {
+        size_t pos = 0;
+        double value = std::stod(str, &pos);
+        
+        // Check if entire string was consumed
+        if (pos != str.length()) {
+            throw std::invalid_argument("Extra characters after number");
+        }
+        
+        return value;
+    } catch (const std::invalid_argument& e) {
+        EXIT("Invalid number format in " + context + ": '" + str + "'");
+    } catch (const std::out_of_range& e) {
+        EXIT("Number out of range in " + context + ": '" + str + "'");
+    }
+    
+    // Should never reach here
+    return 0.0;
 }
 
 std::vector<std::string> split(const std::string& s, char delim)
@@ -61,7 +85,7 @@ System::System(std::string fileName,
     this -> magnetizationByTypeIndex_ = std::vector<Array>(this -> num_types_ + 1);
     for (Index i = 0; i < this -> sigma_.size(); ++i)
     {
-        this -> sigma_.at(i) = 60.0;
+        this -> sigma_.at(i) = MAX_SIGMA;
         this -> counterRejections_.at(i) = 0;
         this -> magnetizationByTypeIndex_.at(i) = ZERO;
     }
@@ -83,6 +107,56 @@ System::System(std::string fileName,
 System::~System()
 {
 
+}
+
+// Move constructor
+System::System(System&& other) noexcept
+    : lattice_(std::move(other.lattice_)),
+      mcs_(std::move(other.mcs_)),
+      kb_(std::move(other.kb_)),
+      seed_(std::move(other.seed_)),
+      temps_(std::move(other.temps_)),
+      fields_(std::move(other.fields_)),
+      outName_(std::move(other.outName_)),
+      magnetizationByTypeIndex_(std::move(other.magnetizationByTypeIndex_)),
+      engine_(std::move(other.engine_)),
+      realRandomGenerator_(std::move(other.realRandomGenerator_)),
+      intRandomGenerator_(std::move(other.intRandomGenerator_)),
+      gaussianRandomGenerator_(std::move(other.gaussianRandomGenerator_)),
+      reporter_(std::move(other.reporter_)),
+      sigma_(std::move(other.sigma_)),
+      counterRejections_(std::move(other.counterRejections_)),
+      num_types_(std::move(other.num_types_))
+{
+    // Update random generator distributions with new bounds if needed
+    intRandomGenerator_ = std::uniform_int_distribution<>(0, lattice_.getAtoms().size() - 1);
+}
+
+// Move assignment operator
+System& System::operator=(System&& other) noexcept
+{
+    if (this != &other) {
+        lattice_ = std::move(other.lattice_);
+        mcs_ = std::move(other.mcs_);
+        kb_ = std::move(other.kb_);
+        seed_ = std::move(other.seed_);
+        temps_ = std::move(other.temps_);
+        fields_ = std::move(other.fields_);
+        outName_ = std::move(other.outName_);
+        magnetizationByTypeIndex_ = std::move(other.magnetizationByTypeIndex_);
+        engine_ = std::move(other.engine_);
+        realRandomGenerator_ = std::move(other.realRandomGenerator_);
+        intRandomGenerator_ = std::move(other.intRandomGenerator_);
+        gaussianRandomGenerator_ = std::move(other.gaussianRandomGenerator_);
+        reporter_ = std::move(other.reporter_);
+        sigma_ = std::move(other.sigma_);
+        counterRejections_ = std::move(other.counterRejections_);
+        num_types_ = std::move(other.num_types_);
+        
+        // Update random generator distributions with new bounds
+        intRandomGenerator_ = std::uniform_int_distribution<>(0, lattice_.getAtoms().size() - 1);
+    }
+    return *this;
 }
 
 void System::ComputeMagnetization()
@@ -137,7 +211,7 @@ void System::randomizeSpins()
 
 void System::monteCarloStep(Real T, Real H)
 {
-    Index num = Index(this -> realRandomGenerator_(this -> engine_) * 5);
+    Index num = Index(this -> realRandomGenerator_(this -> engine_) * NUM_SPIN_MODELS);
     for (Index _ = 0; _ < this -> lattice_.getAtoms().size(); ++_)
     {
         Index randIndex = this -> intRandomGenerator_(this -> engine_);
@@ -205,10 +279,18 @@ void System::cycle()
             for (auto& val : this -> counterRejections_)
             {
                 rejection = val / Real(this -> lattice_.getSizesByIndex().at(i));
-                sigma_temp = this -> sigma_.at(i) * (0.5 / rejection);
-                if (sigma_temp > 60.0 || sigma_temp < 1e-10)
+                // Avoid division by zero or very small rejection rates
+                if (rejection < MIN_REJECTION_RATE)
                 {
-                    sigma_temp = 60.0;
+                    sigma_temp = MAX_SIGMA; // Use maximum sigma when rejection rate is negligible
+                }
+                else
+                {
+                    sigma_temp = this -> sigma_.at(i) * (SIGMA_ADJUSTMENT_FACTOR / rejection);
+                    if (sigma_temp > MAX_SIGMA || sigma_temp < MIN_SIGMA)
+                    {
+                        sigma_temp = MAX_SIGMA;
+                    }
                 }
                 this -> sigma_.at(i) = sigma_temp;
                 this -> counterRejections_.at(i) = 0;
@@ -280,12 +362,14 @@ void System::setState(std::string fileState)
     for (auto& atom : this -> lattice_.getAtoms())
     {
         file >> sx >> sy >> sz;
-        Array spin({atof(sx.c_str()), atof(sy.c_str()), atof(sz.c_str())});
-        Real norm = std::round(std::sqrt((spin*spin).sum()) * 10000) / 10000;
-        if (norm != atom.getSpinNorm())
+        Array spin({safe_stod(sx, "spin x-component"), 
+                     safe_stod(sy, "spin y-component"), 
+                     safe_stod(sz, "spin z-component")});
+        Real norm = std::round(std::sqrt((spin*spin).sum()) * SPIN_NORM_ROUNDING_PRECISION) / SPIN_NORM_ROUNDING_PRECISION;
+        if (fp_not_equal(norm, atom.getSpinNorm()))
         {
             std::cout << norm << " " << atom.getSpinNorm() << " "
-                      << (norm == atom.getSpinNorm()) << " " << spin
+                      << fp_equal(norm, atom.getSpinNorm()) << " " << spin
                       << std::endl;
             EXIT("The spin norm of the site " + std::to_string(atom.getIndex()) + " does not match with the initial state given !!!");
         }
@@ -307,10 +391,10 @@ void System::setAnisotropies(std::vector<std::string> anisotropyfiles)
 
             if (sep.size() == 4) // add an uniaxial term
             {
-                Real ax = atof(sep[0].c_str());
-                Real ay = atof(sep[1].c_str());
-                Real az = atof(sep[2].c_str());
-                Real kan = atof(sep[3].c_str());
+                Real ax = safe_stod(sep[0], "anisotropy x-component");
+                Real ay = safe_stod(sep[1], "anisotropy y-component");
+                Real az = safe_stod(sep[2], "anisotropy z-component");
+                Real kan = safe_stod(sep[3], "anisotropy constant");
 
                 std::function<Real(const Atom&)> func = [kan, ax, ay, az](const Atom& atom){
                    return - kan * (ax * atom.getSpin()[0] + ay * atom.getSpin()[1] + az * atom.getSpin()[2]) * (ax * atom.getSpin()[0] + ay * atom.getSpin()[1] + az * atom.getSpin()[2]);
@@ -319,12 +403,12 @@ void System::setAnisotropies(std::vector<std::string> anisotropyfiles)
             }
             else if (sep.size() == 7)
             {
-                Real Ax = atof(sep[0].c_str());
-                Real Ay = atof(sep[1].c_str());
-                Real Az = atof(sep[2].c_str());
-                Real Bx = atof(sep[3].c_str());
-                Real By = atof(sep[4].c_str());
-                Real Bz = atof(sep[5].c_str());
+                Real Ax = safe_stod(sep[0], "anisotropy A x-component");
+                Real Ay = safe_stod(sep[1], "anisotropy A y-component");
+                Real Az = safe_stod(sep[2], "anisotropy A z-component");
+                Real Bx = safe_stod(sep[3], "anisotropy B x-component");
+                Real By = safe_stod(sep[4], "anisotropy B y-component");
+                Real Bz = safe_stod(sep[5], "anisotropy B z-component");
 
                 Real Cx = Ay*Bz - Az*By;
                 Real Cy = Az*Bx - Ax*Bz;
@@ -334,7 +418,7 @@ void System::setAnisotropies(std::vector<std::string> anisotropyfiles)
                 Array B = {Bx, By, Bz};
                 Array C = {Cx, Cy, Cz};
 
-                Real kan = atof(sep[6].c_str());
+                Real kan = safe_stod(sep[6], "anisotropy constant");
 
                 std::function<Real(const Atom&)> func = [kan, A, B, C](const Atom& atom){
                     return - kan * ((atom.getSpin() * A).sum()*(atom.getSpin() * A).sum()*(atom.getSpin() * B).sum()*(atom.getSpin() * B).sum()

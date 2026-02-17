@@ -1,4 +1,8 @@
 #include "../include/starter.h"
+#include "../include/system.h"
+#include <vector>
+#include <string>
+#include <stdexcept>
 
 namespace STARTER {
     void EXIT(std::string message)
@@ -28,11 +32,35 @@ namespace STARTER {
                 temps.size()) + " != " + std::to_string(fields.size()) + " )!!!");
     }
 
-    void CHECKFILE(std::string filename)
+    void CHECKFILE(const std::string& filename)
     {
+        // Check for empty filename
+        if (filename.empty()) {
+            EXIT("Filename is empty!");
+        }
+        
+        // Basic check for path traversal attempts
+        if (filename.find("..") != std::string::npos) {
+            EXIT("Filename contains path traversal attempt: " + filename);
+        }
+        
+        // Check for absolute paths (optional security measure)
+        if (!filename.empty() && filename[0] == '/') {
+            EXIT("Absolute paths are not allowed: " + filename);
+        }
+        
+        // Try to open the file
         std::ifstream infile(filename);
-        if (!infile.good())
-            EXIT("The initial state file can't open or doesn't exist !!!");
+        if (!infile.good()) {
+            EXIT("Cannot open file: " + filename + " (file doesn't exist or permission denied)");
+        }
+        
+        // Check if file is readable by trying to read first character
+        char test;
+        infile.get(test);
+        if (infile.fail() && !infile.eof()) {
+            EXIT("File is not readable: " + filename);
+        }
     }
 
     void HEADER()
@@ -137,7 +165,7 @@ namespace STARTER {
 
         // Put the amount of Monte Carlo Steps (MCS) into the variable 'mcs'.
         // By default the amount of MCS is 5000.
-        Index mcs = root.get("mcs", 5000).asInt();
+        Index mcs = root.get("mcs", DEFAULT_MCS).asInt();
 
         // Put the value of kb into the variable 'kb'.
         // By default the value of kb is 1.0.
@@ -194,8 +222,8 @@ namespace STARTER {
         {
             unique_T = false;
             const Json::Value temps_json = root["temperature"];
-            Real start_temp = temps_json.get("start", 0.001).asDouble();
-            Real final_temp = temps_json.get("final", 10.0).asDouble();
+            Real start_temp = temps_json.get("start", DEFAULT_TEMP_START).asDouble();
+            Real final_temp = temps_json.get("final", DEFAULT_TEMP_FINAL).asDouble();
             bool cycle = temps_json.get("cycle", false).asBool();
 
             Index points = temps_json.get("points", 5).asUInt();
@@ -207,7 +235,7 @@ namespace STARTER {
             }
             else if (temps_json.isMember("points") == false && temps_json.isMember("delta") == true)
             {
-                delta = temps_json.get("delta", 0.1).asDouble();
+                delta = temps_json.get("delta", DEFAULT_TEMP_DELTA).asDouble();
                 if ((((final_temp - start_temp) / delta + 1) <= 0) || delta == 0.0)
                     EXIT("Temperature section in Json has a invalid value for 'delta' !!!");
                 points = (final_temp - start_temp) / delta + 1;
@@ -261,8 +289,8 @@ namespace STARTER {
         {
             unique_H = false;
             const Json::Value fields_json = root["field"];
-            Real start_field = fields_json.get("start", 0.001).asDouble();
-            Real final_field = fields_json.get("final", 10.0).asDouble();
+            Real start_field = fields_json.get("start", DEFAULT_FIELD_START).asDouble();
+            Real final_field = fields_json.get("final", DEFAULT_FIELD_FINAL).asDouble();
             bool cycle = fields_json.get("cycle", false).asBool();
 
             Index points = fields_json.get("points", 5).asUInt();
@@ -274,7 +302,7 @@ namespace STARTER {
             }
             else if (fields_json.isMember("points") == false && fields_json.isMember("delta") == true)
             {
-                delta = fields_json.get("delta", 0.1).asDouble();
+                delta = fields_json.get("delta", DEFAULT_FIELD_DELTA).asDouble();
                 if ((((final_field - start_field) / delta + 1) <= 0) || delta == 0.0)
                     EXIT("Field section in Json has a invalid value for 'delta' !!!");
                 points = (final_field - start_field) / delta + 1;

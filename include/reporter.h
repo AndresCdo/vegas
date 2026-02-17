@@ -3,7 +3,7 @@
 
 #include "params.h"
 #include "lattice.h"
-#include "H5Include.h"
+#include <hdf5.h>
 
 #include <string>
 #include <vector>
