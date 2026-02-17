@@ -197,6 +197,22 @@ cd build && ctest --output-on-failure
 ./build/vegas_simple_tests
 ```
 
+### Validation
+
+To verify the complete simulation pipeline works correctly, run the validation script:
+
+```bash
+./validate.sh
+```
+
+This will:
+1. Run a simulation with the test system
+2. Verify HDF5 output structure
+3. Run the Python analyzer
+4. Check all output files
+
+See [WORKFLOW.md](WORKFLOW.md) for detailed workflow documentation.
+
 ### Adding New Features
 
 1. **New Spin Models**: Implement the `SpinModel` interface

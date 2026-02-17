@@ -63,3 +63,10 @@ CMakeUserPresets.json
 
 vegas
 build/
+.venv/
+
+# Test system outputs
+test_system/*.h5
+test_system/*.mean
+test_system/*.pdf
+test_system/*.xyz
