@@ -44,6 +44,9 @@ Atom::Atom(Index index, Array spin, Array position)
     this -> setSpin({0.0, 0.0, this -> getPossibleProjections()[0]}); // ALWAYS THE INITIAL SPIN WILL BE IN THE Z-DIRECTION
     this -> removePossibleProjection(0);
 
+    // Initialize with default spin model (Heisenberg)
+    this -> model_ = "heisenberg";
+    this -> spinModel_ = createSpinModel(this -> model_);
 
     this -> oldSpin_ = this -> spin_;
 }
@@ -51,6 +54,51 @@ Atom::Atom(Index index, Array spin, Array position)
 Atom::~Atom()
 {
 
+}
+
+// Move constructor
+Atom::Atom(Atom&& other) noexcept
+    : index_(std::move(other.index_))
+    , spin_(std::move(other.spin_))
+    , nbhs_(std::move(other.nbhs_))
+    , exchanges_(std::move(other.exchanges_))
+    , position_(std::move(other.position_))
+    , spinNorm_(std::move(other.spinNorm_))
+    , oldSpin_(std::move(other.oldSpin_))
+    , externalField_(std::move(other.externalField_))
+    , type_(std::move(other.type_))
+    , typeIndex_(std::move(other.typeIndex_))
+    , projections_(std::move(other.projections_))
+    , possibleProjections_(std::move(other.possibleProjections_))
+    , model_(std::move(other.model_))
+    , spinModel_(std::move(other.spinModel_))
+    , Sproj_(std::move(other.Sproj_))
+    , anisotropyTerms_(std::move(other.anisotropyTerms_))
+{
+}
+
+// Move assignment operator
+Atom& Atom::operator=(Atom&& other) noexcept
+{
+    if (this != &other) {
+        index_ = std::move(other.index_);
+        spin_ = std::move(other.spin_);
+        nbhs_ = std::move(other.nbhs_);
+        exchanges_ = std::move(other.exchanges_);
+        position_ = std::move(other.position_);
+        spinNorm_ = std::move(other.spinNorm_);
+        oldSpin_ = std::move(other.oldSpin_);
+        externalField_ = std::move(other.externalField_);
+        type_ = std::move(other.type_);
+        typeIndex_ = std::move(other.typeIndex_);
+        projections_ = std::move(other.projections_);
+        possibleProjections_ = std::move(other.possibleProjections_);
+        model_ = std::move(other.model_);
+        spinModel_ = std::move(other.spinModel_);
+        Sproj_ = std::move(other.Sproj_);
+        anisotropyTerms_ = std::move(other.anisotropyTerms_);
+    }
+    return *this;
 }
 
 const Array& Atom::getPosition() const
@@ -163,276 +211,7 @@ const std::string& Atom::getModel() const
 void Atom::setModel(const std::string& model)
 {
     this -> model_ = model;
-
-    if (model == "random")
-    {
-        this -> randomizeSpin = [](
-            std::mt19937_64& engine,
-            std::uniform_real_distribution<>& realRandomGenerator,
-            std::normal_distribution<>& gaussianRandomGenerator,
-            Real sigma_,
-            Atom& atom, Index num)
-        {
-            atom.setOldSpin(atom.getSpin());
-            Array gamma({gaussianRandomGenerator(engine), gaussianRandomGenerator(engine), gaussianRandomGenerator(engine)});
-            Array unitArray = gamma / std::sqrt((gamma * gamma).sum());
-            atom.setSpin( atom.getSpinNorm() * unitArray);
-        };
-    }
-    else if (model == "flip")
-    {
-        this -> randomizeSpin = [](
-            std::mt19937_64& engine,
-            std::uniform_real_distribution<>& realRandomGenerator,
-            std::normal_distribution<>& gaussianRandomGenerator,
-            Real sigma_,
-            Atom& atom, Index num)
-        {
-            atom.setOldSpin(atom.getSpin());
-            atom.setSpin(  - atom.getSpin());
-        };
-    }
-    else if (model == "qising")
-    {
-        this -> randomizeSpin = [](
-            std::mt19937_64& engine,
-            std::uniform_real_distribution<>& realRandomGenerator,
-            std::normal_distribution<>& gaussianRandomGenerator,
-            Real sigma_,
-            Atom& atom, Index num)
-        {
-            atom.setOldSpin(atom.getSpin());
-            atom.setSproj(int(realRandomGenerator(engine) * atom.getPossibleProjections().size()));
-            atom.setSpin({0.0, 0.0, atom.getPossibleProjections()[atom.getSproj()]});
-            atom.changeProjection(atom.getSproj(), atom.getOldSpin()[2]);
-        };
-    }
-    else if (model == "adaptive")
-    {
-        this -> randomizeSpin = [](
-            std::mt19937_64& engine,
-            std::uniform_real_distribution<>& realRandomGenerator,
-            std::normal_distribution<>& gaussianRandomGenerator,
-            Real sigma_,
-            Atom& atom, Index num)
-        {
-            atom.setOldSpin(atom.getSpin());
-            Array gamma({gaussianRandomGenerator(engine), gaussianRandomGenerator(engine), gaussianRandomGenerator(engine)});
-            Array spinUnit = atom.getSpin() / std::sqrt((atom.getSpin() * atom.getSpin()).sum());
-            Array Sp = spinUnit + sigma_ * gamma;
-            Sp /= std::sqrt((Sp * Sp).sum());
-            Sp = atom.getSpinNorm() * Sp;
-            atom.setSpin(Sp);
-        };
-    }
-    else if (model == "cone30")
-    {
-        this -> randomizeSpin = [](
-            std::mt19937_64& engine,
-            std::uniform_real_distribution<>& realRandomGenerator,
-            std::normal_distribution<>& gaussianRandomGenerator,
-            Real sigma_,
-            Atom& atom, Index num)
-        {
-            Real A = M_PI / 6.0;
-            Real cos_theta = (1.0 - std::cos(A)) * realRandomGenerator(engine) + std::cos(A);
-            Real theta_rot = std::acos(cos_theta);
-
-            Array vector = atom.getSpin() / norm(atom.getSpin());
-            Real x = vector[0];
-            Real y = vector[1];
-            Real z = vector[2];
-            Real theta_vector = std::acos(z);
-            Real phi_vector = std::atan2(y, x);
-
-            Real phi_rot = 2.0 * M_PI * realRandomGenerator(engine);
-            Real theta_new = theta_vector - theta_rot;
-            Real xn = std::sin(theta_new) * std::cos(phi_vector);
-            Real yn = std::sin(theta_new) * std::sin(phi_vector);
-            Real zn = std::cos(theta_new);
-            Array new_vector = {xn, yn, zn};
-            Array v_rot = new_vector*std::cos(phi_rot) + cross(vector, new_vector)*std::sin(phi_rot) + vector*dot(vector, new_vector)*(1-std::cos(phi_rot));
-
-            atom.setOldSpin(atom.getSpin());
-            Array Sp = atom.getSpinNorm() * v_rot / std::sqrt((v_rot * v_rot).sum());
-            atom.setSpin(Sp);
-        };
-    }
-    else if (model == "cone15")
-    {
-        this -> randomizeSpin = [](
-            std::mt19937_64& engine,
-            std::uniform_real_distribution<>& realRandomGenerator,
-            std::normal_distribution<>& gaussianRandomGenerator,
-            Real sigma_,
-            Atom& atom, Index num)
-        {
-            Real A = M_PI / 12.0;
-            Real cos_theta = (1.0 - std::cos(A)) * realRandomGenerator(engine) + std::cos(A);
-            Real theta_rot = std::acos(cos_theta);
-
-            Array vector = atom.getSpin() / norm(atom.getSpin());
-            Real x = vector[0];
-            Real y = vector[1];
-            Real z = vector[2];
-            Real theta_vector = std::acos(z);
-            Real phi_vector = std::atan2(y, x);
-
-            Real phi_rot = 2.0 * M_PI * realRandomGenerator(engine);
-            Real theta_new = theta_vector - theta_rot;
-            Real xn = std::sin(theta_new) * std::cos(phi_vector);
-            Real yn = std::sin(theta_new) * std::sin(phi_vector);
-            Real zn = std::cos(theta_new);
-            Array new_vector = {xn, yn, zn};
-            Array v_rot = new_vector*std::cos(phi_rot) + cross(vector, new_vector)*std::sin(phi_rot) + vector*dot(vector, new_vector)*(1-std::cos(phi_rot));
-
-            atom.setOldSpin(atom.getSpin());
-            Array Sp = atom.getSpinNorm() * v_rot / std::sqrt((v_rot * v_rot).sum());
-            atom.setSpin(Sp);
-        };
-    }
-    else if (model == "hn30")
-    {
-        this -> randomizeSpin = [](
-            std::mt19937_64& engine,
-            std::uniform_real_distribution<>& realRandomGenerator,
-            std::normal_distribution<>& gaussianRandomGenerator,
-            Real sigma_,
-            Atom& atom, Index num)
-        {
-            atom.setOldSpin(atom.getSpin());
-            if (num == 0)
-            {
-                Real A = M_PI / 6.0;
-                Real cos_theta = (1.0 - std::cos(A)) * realRandomGenerator(engine) + std::cos(A);
-                // Real cos_theta = 2*realRandomGenerator(engine) - 1;
-                Real theta_rot = std::acos(cos_theta);
-
-                Array vector = atom.getSpin() / norm(atom.getSpin());
-                Real x = vector[0];
-                Real y = vector[1];
-                Real z = vector[2];
-                Real theta_vector = std::acos(z);
-                Real phi_vector = std::atan2(y, x);
-
-                Real phi_rot = 2.0 * M_PI * realRandomGenerator(engine);
-                Real theta_new = theta_vector - theta_rot;
-                Real xn = std::sin(theta_new) * std::cos(phi_vector);
-                Real yn = std::sin(theta_new) * std::sin(phi_vector);
-                Real zn = std::cos(theta_new);
-                Array new_vector = {xn, yn, zn};
-                Array v_rot = new_vector*std::cos(phi_rot) + cross(vector, new_vector)*std::sin(phi_rot) + vector*dot(vector, new_vector)*(1-std::cos(phi_rot));
-
-                atom.setOldSpin(atom.getSpin());
-                Array Sp = atom.getSpinNorm() * v_rot / std::sqrt((v_rot * v_rot).sum());
-                atom.setSpin(Sp);
-            }
-            else if (num == 1 || num == 2 || num == 3)
-            {
-                Array gamma({gaussianRandomGenerator(engine), gaussianRandomGenerator(engine), gaussianRandomGenerator(engine)});
-                Array unitArray = gamma / std::sqrt((gamma * gamma).sum());
-                atom.setSpin( atom.getSpinNorm() * unitArray);
-            }
-            else if (num == 4)
-            {
-                atom.setSpin(  - atom.getSpin());
-            }
-        };
-    }
-    else if (model == "hn15")
-    {
-        this -> randomizeSpin = [](
-            std::mt19937_64& engine,
-            std::uniform_real_distribution<>& realRandomGenerator,
-            std::normal_distribution<>& gaussianRandomGenerator,
-            Real sigma_,
-            Atom& atom, Index num)
-        {
-            atom.setOldSpin(atom.getSpin());
-            if (num == 0)
-            {
-                Real A = M_PI / 12.0;
-                Real cos_theta = (1.0 - std::cos(A)) * realRandomGenerator(engine) + std::cos(A);
-                // Real cos_theta = 2*realRandomGenerator(engine) - 1;
-                Real theta_rot = std::acos(cos_theta);
-
-                Array vector = atom.getSpin() / norm(atom.getSpin());
-                Real x = vector[0];
-                Real y = vector[1];
-                Real z = vector[2];
-                Real theta_vector = std::acos(z);
-                Real phi_vector = std::atan2(y, x);
-
-                Real phi_rot = 2.0 * M_PI * realRandomGenerator(engine);
-                Real theta_new = theta_vector - theta_rot;
-                Real xn = std::sin(theta_new) * std::cos(phi_vector);
-                Real yn = std::sin(theta_new) * std::sin(phi_vector);
-                Real zn = std::cos(theta_new);
-                Array new_vector = {xn, yn, zn};
-                Array v_rot = new_vector*std::cos(phi_rot) + cross(vector, new_vector)*std::sin(phi_rot) + vector*dot(vector, new_vector)*(1-std::cos(phi_rot));
-
-                atom.setOldSpin(atom.getSpin());
-                Array Sp = atom.getSpinNorm() * v_rot / std::sqrt((v_rot * v_rot).sum());
-                atom.setSpin(Sp);
-            }
-            else if (num == 1 || num == 2 || num == 3)
-            {
-                Array gamma({gaussianRandomGenerator(engine), gaussianRandomGenerator(engine), gaussianRandomGenerator(engine)});
-                Array unitArray = gamma / std::sqrt((gamma * gamma).sum());
-                atom.setSpin( atom.getSpinNorm() * unitArray);
-            }
-            else if (num == 4)
-            {
-                atom.setSpin(  - atom.getSpin());
-            }
-        };
-    }
-
-
-
-    if (model == "random" || model == "adaptive" || model == "cone15" || model == "cone30" || model == "hn15" || model == "hn30")
-    {
-        this -> randomInitialState = [](
-            std::mt19937_64& engine,
-            std::uniform_real_distribution<>& realRandomGenerator,
-            std::normal_distribution<>& gaussianRandomGenerator,
-            Atom& atom)
-        {
-            atom.setOldSpin(atom.getSpin());
-            Array gamma({gaussianRandomGenerator(engine), gaussianRandomGenerator(engine), gaussianRandomGenerator(engine)});
-            Array unitArray = gamma / std::sqrt((gamma * gamma).sum());
-            atom.setSpin( atom.getSpinNorm() * unitArray);
-        };
-    }
-    else if (model == "flip")
-    {
-        this -> randomInitialState = [](
-            std::mt19937_64& engine,
-            std::uniform_real_distribution<>& realRandomGenerator,
-            std::normal_distribution<>& gaussianRandomGenerator,
-            Atom& atom)
-        {
-            atom.setOldSpin(atom.getSpin());
-            if (realRandomGenerator(engine) < 0.5)
-                atom.setSpin( {0.0, 0.0, -atom.getSpinNorm()} );
-            else
-                atom.setSpin( {0.0, 0.0, atom.getSpinNorm()} );
-        };
-    }
-    else if (model == "qising")
-    {
-        this -> randomInitialState = [](
-            std::mt19937_64& engine,
-            std::uniform_real_distribution<>& realRandomGenerator,
-            std::normal_distribution<>& gaussianRandomGenerator,
-            Atom& atom)
-        {
-            atom.setOldSpin(atom.getSpin());
-            atom.setSproj(int(realRandomGenerator(engine) * atom.getPossibleProjections().size()));
-            atom.setSpin({0.0, 0.0, atom.getPossibleProjections()[atom.getSproj()]});
-            atom.changeProjection(atom.getSproj(), atom.getOldSpin()[2]);
-        };
-    }
+    this -> spinModel_ = createSpinModel(model);
 }
 
 Real Atom::getExchangeEnergy() const
@@ -497,4 +276,27 @@ const Index& Atom::getTypeIndex() const
 void Atom::setTypeIndex(const Index& typeIndex)
 {
     this -> typeIndex_ = typeIndex;
+}
+
+// Spin model method implementations
+void Atom::initializeRandomState(
+    std::mt19937_64& engine,
+    std::uniform_real_distribution<>& realRandomGenerator,
+    std::normal_distribution<>& gaussianRandomGenerator)
+{
+    if (this -> spinModel_) {
+        this -> spinModel_->initializeRandomState(engine, realRandomGenerator, gaussianRandomGenerator, *this);
+    }
+}
+
+void Atom::randomizeSpin(
+    std::mt19937_64& engine,
+    std::uniform_real_distribution<>& realRandomGenerator,
+    std::normal_distribution<>& gaussianRandomGenerator,
+    Real sigma,
+    Index num)
+{
+    if (this -> spinModel_) {
+        this -> spinModel_->randomizeSpin(engine, realRandomGenerator, gaussianRandomGenerator, sigma, *this, num);
+    }
 }

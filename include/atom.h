@@ -2,10 +2,12 @@
 #define ATOM_H
 
 #include "params.h"
+#include "spin_model.h"
 
 #include <string>
 #include <functional>
 #include <random>
+#include <memory>
 
 class Atom
 {
@@ -13,6 +15,14 @@ public:
     Atom();
     Atom(Index index, Array spin, Array position);
     ~Atom();
+    
+    // Move constructor and assignment
+    Atom(Atom&& other) noexcept;
+    Atom& operator=(Atom&& other) noexcept;
+    
+    // Delete copy constructor and assignment
+    Atom(const Atom&) = delete;
+    Atom& operator=(const Atom&) = delete;
 
 
     const Array& getPosition() const;
@@ -58,21 +68,22 @@ public:
     Real getZeemanEnergy(const Real& H) const;
     Real getAnisotropyEnergy(const Atom& atom) const;
 
-    std::function<void(
-        std::mt19937_64& engine,
-        std::uniform_real_distribution<>& realRandomGenerator,
-        std::normal_distribution<>& gaussianRandomGenerator,
-        Real sigma_, Atom& atom, Index num)> randomizeSpin;
 
-
-    std::function<void(
-        std::mt19937_64& engine,
-        std::uniform_real_distribution<>& realRandomGenerator,
-        std::normal_distribution<>& gaussianRandomGenerator,
-        Atom& atom)> randomInitialState;
 
     void revertSpin();
 
+    // Spin model methods
+    void initializeRandomState(
+        std::mt19937_64& engine,
+        std::uniform_real_distribution<>& realRandomGenerator,
+        std::normal_distribution<>& gaussianRandomGenerator);
+    
+    void randomizeSpin(
+        std::mt19937_64& engine,
+        std::uniform_real_distribution<>& realRandomGenerator,
+        std::normal_distribution<>& gaussianRandomGenerator,
+        Real sigma,
+        Index num);
 
     void addAnisotropyTerm(const std::function<Real(const Atom&)>& func);
 private:
@@ -91,6 +102,7 @@ private:
     std::vector<double> possibleProjections_;
 
     std::string model_;
+    std::unique_ptr<SpinModel> spinModel_;
 
     Index Sproj_;
 

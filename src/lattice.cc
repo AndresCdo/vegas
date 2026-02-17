@@ -50,7 +50,7 @@ Lattice::Lattice(std::string fileName)
         atom.setModel(model);
         atom.setTypeIndex(this -> mapTypeIndexes_.at(type));
 
-        this -> atoms_.at(index) = atom;
+        this -> atoms_.at(index) = std::move(atom);
 
 
         this -> sizesByIndex_.at(this -> mapTypeIndexes_.at(type)) += 1;

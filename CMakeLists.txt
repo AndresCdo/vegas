@@ -59,6 +59,7 @@ target_sources(
     ./src/reporter.cc
     ./src/system.cc
     ./src/starter.cc
+    ./src/spin_model.cc
 )
 target_link_libraries(vegas PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
 
@@ -73,6 +74,7 @@ if(GTest_FOUND)
         ./src/reporter.cc
         ./src/system.cc
         ./src/starter.cc
+        ./src/spin_model.cc
     )
     target_link_libraries(vegas_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES} GTest::gtest GTest::gtest_main)
     add_test(NAME vegas_tests COMMAND vegas_tests)
@@ -87,6 +89,21 @@ target_sources(
     ./src/reporter.cc
     ./src/system.cc
     ./src/starter.cc
+    ./src/spin_model.cc
 )
 target_link_libraries(vegas_simple_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
 add_test(NAME vegas_simple_tests COMMAND vegas_simple_tests)
+
+# Integration test executable
+add_executable(vegas_integration_tests tests/test_integration.cc)
+target_sources(
+    vegas_integration_tests PRIVATE
+    ./src/atom.cc
+    ./src/lattice.cc
+    ./src/reporter.cc
+    ./src/system.cc
+    ./src/starter.cc
+    ./src/spin_model.cc
+)
+target_link_libraries(vegas_integration_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
+add_test(NAME vegas_integration_tests COMMAND vegas_integration_tests)

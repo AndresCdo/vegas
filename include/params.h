@@ -52,4 +52,10 @@ inline bool fp_not_equal(Real a, Real b, Real epsilon = EPSILON)
     return std::abs(a - b) >= epsilon;
 }
 
+// Safe conversion from string to double with error handling
+Real safe_stod(const std::string& str, const std::string& context = "");
+
+// Safe conversion from string to double with default value
+Real safe_stod(const std::string& str, Real default_value);
+
 #endif

@@ -19,7 +19,7 @@ void EXIT(std::string message)
 }
 
 // Safe conversion from string to double with error handling
-Real safe_stod(const std::string& str, const std::string& context = "")
+Real safe_stod(const std::string& str, const std::string& context)
 {
     try {
         size_t pos = 0;
@@ -39,6 +39,24 @@ Real safe_stod(const std::string& str, const std::string& context = "")
     
     // Should never reach here
     return 0.0;
+}
+
+// Safe conversion from string to double with default value
+Real safe_stod(const std::string& str, Real default_value)
+{
+    try {
+        size_t pos = 0;
+        double value = std::stod(str, &pos);
+        
+        // Check if entire string was consumed
+        if (pos != str.length()) {
+            return default_value;
+        }
+        
+        return value;
+    } catch (...) {
+        return default_value;
+    }
 }
 
 std::vector<std::string> split(const std::string& s, char delim)
@@ -202,10 +220,9 @@ Real System::totalEnergy(Real H)
 void System::randomizeSpins()
 {
     for (auto& atom : this -> lattice_.getAtoms())
-        atom.randomInitialState(this -> engine_,
+        atom.initializeRandomState(this -> engine_,
             this -> realRandomGenerator_,
-            this -> gaussianRandomGenerator_,
-            atom);
+            this -> gaussianRandomGenerator_);
 }
 
 
@@ -220,7 +237,7 @@ void System::monteCarloStep(Real T, Real H)
         atom.randomizeSpin(this -> engine_,
             this -> realRandomGenerator_,
             this -> gaussianRandomGenerator_,
-            this -> sigma_.at(atom.getTypeIndex()), atom, num);
+            this -> sigma_.at(atom.getTypeIndex()), num);
         Real newEnergy = this -> localEnergy(atom, H);
         Real deltaEnergy = newEnergy - oldEnergy;
 
