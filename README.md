@@ -4,11 +4,13 @@ VEGAS (VEctor General Atomistic Simulator) is a software package for simulation,
 
 ## Features
 
-- **Multiple Spin Models**: Heisenberg, Ising, and custom spin models
+- **Multiple Spin Models**: Heisenberg, Ising, QuantumIsing, Adaptive, Cone, HN, and custom spin models
 - **Monte Carlo Simulations**: Metropolis algorithm with adaptive step size
 - **Magnetic Interactions**: Exchange, anisotropy, Zeeman, and Dzyaloshinskii-Moriya interactions
 - **Data Output**: HDF5 format with compression and chunking
 - **Analysis Tools**: Python scripts for data analysis and visualization
+- **Validation Pipeline**: Automated end-to-end testing with sample system
+- **Professional CLI**: Modern command-line interface with subcommands, verbosity control, and configuration options
 - **Parallelization**: Temperature and field point parallelism
 
 ## Installation
@@ -17,49 +19,134 @@ VEGAS (VEctor General Atomistic Simulator) is a software package for simulation,
 
 - C++17 compatible compiler (GCC 8+, Clang 10+, MSVC 2019+)
 - CMake 3.20 or higher
-- Conan 2.0 or higher
 - Python 3.8+ (for analysis tools)
+- **Optional**: Conan 2.0+ (alternative dependency management)
 
 ### Build Instructions
 
-1. Install [Conan](https://conan.io/):
+#### **Using System Packages (Recommended)**
 
 ```bash
-pip install conan
+# Install dependencies (Ubuntu/Debian)
+sudo apt-get install libjsoncpp-dev libhdf5-dev libhdf5-cpp-103-1t64
+
+# Build
+mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j4
+
+# Run tests
+./vegas_simple_tests
 ```
 
-2. Build the project:
+#### **Using Conan (Alternative)**
 
 ```bash
+# Install Conan
+pip install conan
+
+# Build with Conan
 conan profile detect --force
 conan install . --output-folder=build --build=missing
 cmake -S . -B build -G "Unix Makefiles" \
     -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake \
     -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-```
 
-3. Run tests (optional):
-
-```bash
-cd build
-ctest --output-on-failure
+# Run tests
+cd build && ctest --output-on-failure
 ```
 
 ### Docker Build
+
+The Dockerfile uses system packages (Ubuntu 24.04) and includes Python dependencies for the analyzers:
 
 ```bash
 docker build -t vegas .
 docker run -v $(pwd)/data:/data vegas
 ```
 
-## Usage
-
-### Basic Usage
+The container's entrypoint is set to the `vegas` executable, so you can run simulations directly:
 
 ```bash
-./vegas input.json
+docker run -v $(pwd)/config.json:/config.json vegas run /config.json
 ```
+
+## Usage
+
+### Command Line Interface
+
+VEGAS provides a modern command-line interface with subcommands, verbosity control, and configuration options. The interface is built using the `cxxopts` library and supports both traditional single-argument usage and new subcommand-based usage.
+
+#### Quick Examples
+
+```bash
+# Run a simulation
+./vegas run config.json
+
+# Analyze simulation results (future integration)
+./vegas analyze output.h5
+
+# Validate configuration file (future integration)
+./vegas validate config.json
+
+# Show version and information
+./vegas info
+
+# Backward compatibility mode (deprecated but supported)
+./vegas config.json
+
+# Show help
+./vegas --help
+
+# Show version
+./vegas --version
+
+# Run quietly (minimal output)
+./vegas --quiet run config.json
+
+# Disable colored output
+./vegas --no-color run config.json
+```
+
+#### Subcommands
+
+| Subcommand | Description | Required Argument |
+|------------|-------------|-------------------|
+| `run` | Run a Monte Carlo simulation | Configuration file (JSON) |
+| `analyze` | Analyze simulation results (future) | HDF5 output file |
+| `validate` | Validate configuration file (future) | Configuration file (JSON) |
+| `info` | Show version and system information | None |
+
+#### Global Options
+
+These options can be used with any subcommand or with backward-compatible usage:
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--help` | `-h` | Show help message and exit |
+| `--version` | `-v` | Show version information and exit |
+| `--verbose` | `-V` | Verbose output (default) |
+| `--quiet` | `-q` | Quiet mode (minimal output) |
+| `--no-color` | | Disable colored terminal output |
+| `--config FILE` | `-c` | Configuration file (backward compatibility) |
+
+#### Configuration Overrides (Future Implementation)
+
+The following options can be used to override JSON configuration values when using the `run` subcommand. **Note**: These are currently stubbed with warning messages; full implementation is planned for a future release.
+
+```bash
+./vegas run config.json --mcs 10000 --seed 42 --output results.h5
+```
+
+| Option | Description | JSON Equivalent |
+|--------|-------------|-----------------|
+| `--mcs N` | Monte Carlo steps | `"mcs": N` |
+| `--seed N` | Random seed | `"seed": N` |
+| `--kb X` | Boltzmann constant | `"kb": X` |
+| `--output FILE` | Output file path | `"out": "FILE"` |
+| `--sample FILE` | Sample file path | `"sample": "FILE"` |
+| `--initialstate FILE` | Initial state file | `"initialstate": "FILE"` |
 
 ### Input JSON Format
 
@@ -128,7 +215,19 @@ VEGAS outputs data in HDF5 format with the following structure:
 
 ### Analysis Tools
 
-Python scripts for data analysis are located in the `analyzers/` directory:
+Python scripts for data analysis are located in the `analyzers/` directory. **Note**: The `vegas analyze` subcommand is planned for future integration with these Python analyzers, but currently the Python scripts must be run directly.
+
+First install dependencies:
+
+```bash
+# Using uv (recommended)
+uv sync
+
+# Or using pip
+pip install h5py matplotlib numpy click
+```
+
+Then run the analyzers:
 
 ```bash
 # Basic analysis
@@ -146,10 +245,11 @@ python analyzers/vegas-analyzer-xyz.py output.h5
 ### Core Components
 
 1. **Atom**: Represents a magnetic atom with position, spin, and interactions
-2. **Lattice**: Collection of atoms with neighbor relationships
-3. **System**: Monte Carlo simulation engine
-4. **Reporter**: Handles HDF5 data output
-5. **Starter**: JSON configuration parser and initialization
+2. **SpinModel**: Abstract interface for spin models (Heisenberg, Ising, etc.)
+3. **Lattice**: Collection of atoms with neighbor relationships
+4. **System**: Monte Carlo simulation engine
+5. **Reporter**: Handles HDF5 data output
+6. **Starter**: JSON configuration parser and initialization
 
 ### Code Structure
 
@@ -160,13 +260,15 @@ vegas/
 │   ├── lattice.h     # Lattice class
 │   ├── system.h      # System class
 │   ├── params.h      # Type definitions and constants
-│   └── starter.h     # Configuration parser
+│   ├── starter.h     # Configuration parser
+│   └── spin_model.h  # Spin model abstraction
 ├── src/              # Source files
 │   ├── main.cc       # Main entry point
 │   ├── atom.cc       # Atom implementation
 │   ├── lattice.cc    # Lattice implementation
 │   ├── system.cc     # System implementation
-│   └── starter.cc    # Starter implementation
+│   ├── starter.cc    # Starter implementation
+│   └── spin_model.cc # Spin model implementations
 ├── analyzers/        # Python analysis scripts
 ├── tests/            # Test files
 └── CMakeLists.txt    # Build configuration
@@ -180,6 +282,7 @@ vegas/
 - **Testing**: Google Test framework for unit tests
 - **Static Analysis**: Clang-Tidy and cppcheck
 - **Memory Safety**: RAII pattern, smart pointers where appropriate
+- **Development Guidelines**: See [AGENTS.md](AGENTS.md) for detailed project state and development instructions
 
 ### Building and Testing
 
@@ -193,8 +296,9 @@ cmake --build build -j
 # Run tests
 cd build && ctest --output-on-failure
 
-# Run specific test
+# Run specific tests
 ./build/vegas_simple_tests
+./build/vegas_integration_tests
 ```
 
 ### Validation
@@ -274,6 +378,7 @@ Typical performance on a modern CPU:
 - [ ] Documentation is updated
 - [ ] No performance regressions
 - [ ] Security considerations addressed
+- [ ] Validation script passes (`./validate.sh`)
 
 ## License
 
@@ -284,10 +389,10 @@ MIT License - see LICENSE file for details.
 If you use VEGAS in your research, please cite:
 
 ```bibtex
-@software{vegas2025,
+@software{vegas2026,
   title = {VEGAS: Vector General Atomistic Simulator},
   author = {VEGAS Development Team},
-  year = {2025},
+  year = {2026},
   url = {https://github.com/jdalzatec/vegas}
 }
 ```

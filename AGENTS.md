@@ -4,7 +4,7 @@
 
 VEGAS (VEctor General Atomistic Simulator) is a Monte Carlo simulation package for magnetic materials. The project implements atomistic simulations with multiple spin models, magnetic interactions, and HDF5 data output.
 
-## Current State (February 2025)
+## Current State (February 2026)
 
 ### ✅ **COMPLETED IMPROVEMENTS**
 
@@ -13,32 +13,68 @@ VEGAS (VEctor General Atomistic Simulator) is a Monte Carlo simulation package f
 2. **Unsafe `atof()`**: Replaced all instances with `safe_stod()` with proper error handling
 3. **Floating Point Comparisons**: Implemented `fp_equal()` and `fp_not_equal()` with epsilon
 4. **Division by Zero**: Prevented in sigma adjustment (`system.cc:232-244`)
-5. **Magic Numbers**: Defined as constants in `params.h`
+5. **Magic Numbers**: Defined as constants in `params.h**
+6. **HDF5 Resource Leaks**: Fixed in `reporter.cc` (implemented RAII, ensured all HDF5 handles are properly closed)
+7. **Duplicate EXIT() Definitions**: Fixed ODR violation by creating `error.h` with inline function
 
 #### **Build System:**
 1. **CMake Configuration**: Works with system packages (libjsoncpp-dev, libhdf5-dev)
 2. **HDF5 Linking**: Fixed to include both C and C++ libraries
 3. **JSON Library**: Multiple detection methods (pkg-config, find_package, manual)
 4. **Testing Framework**: Basic tests integrated with CMake
+5. **Python Environment**: Set up with uv virtual environment and requirements.txt
+6. **Validation Pipeline**: Complete end-to-end validation script (`validate.sh`)
 
 #### **Code Quality:**
 1. **Move Semantics**: Implemented for `Lattice` and `System` classes
 2. **Input Validation**: Enhanced `CHECKFILE()` with security checks
 3. **Error Handling**: Improved throughout codebase
 4. **Documentation**: Comprehensive README, FORMATS.md, example config
+5. **SpinModel Abstraction**: Created base class and concrete implementations (Heisenberg, Ising, QuantumIsing, Adaptive, Cone, HN)
+6. **Integration Tests**: Added comprehensive tests for SpinModel factory and Atom-SpinModel integration
+7. **End-to-End Validation**: Complete test system with minimal example and verification scripts
+8. **Unit Tests Expanded**: Added comprehensive unit tests for Atom and Lattice classes
+9. **Exception Hierarchy**: Implemented comprehensive exception classes, replaced all EXIT() calls with specific exceptions
+10. **CLI Enhancement**: Added professional command-line interface with subcommands (run, analyze, validate, info), verbosity control, colored output, configuration override options (stubbed), and backward compatibility
+
+#### **2026-02-20: Code Quality Overhaul (v2.1.0)**
+
+**Critical Issues Fixed:**
+1. **Dangling Pointer**: Replaced raw `Atom*` pointers with `Index` indices in neighbor storage (`atom.h`, `atom.cc`, `lattice.cc`)
+2. **HDF5 Handle Leaks**: Fixed resource cleanup on error paths in Reporter constructor
+3. **Undefined Methods**: Implemented `getAnisotropyUnit()`, `getTypeAnisotropy()`, `getKan()` in Atom class
+
+**God Functions Refactored:**
+1. **CREATE_SYSTEM()**: Now uses `ConfigParser` and `SystemBuilder` (~60% code reduction)
+2. **Reporter()**: Extracted into 6 helper methods (~76% reduction in constructor)
+3. **main()**: Deduplicated override warning code into `warn_about_overrides()` helper
+
+**New Infrastructure:**
+- `ConfigParser`: Clean JSON configuration parsing with validation
+- `SystemBuilder`: Builder pattern for fluent System construction
+- `SimulationConfig`: Structured configuration data struct
+- Exception hierarchy: `VEGASException`, `FileIOException`, `InvalidInputException`, `ConfigurationException`, `NumericConversionException`, `SimulationException`, `HDF5Exception`
+
+**Python Improvements:**
+- Context managers for HDF5 file handling (eliminates resource leaks)
+- Type hints added to all analyzers
+- Safe division with zero temperature check
+- Improved error handling throughout
+
+**Files Changed:** 17 modified, 6 new files (+1,645 lines, -973 lines)
 
 ### 🚨 **KNOWN ISSUES**
 
 #### **Build/Configuration:**
 1. **Conan Not Required**: Project now uses system packages by default
 2. **HDF5 Header**: Changed from `H5Include.h` to standard `hdf5.h`
-3. **JSON Headers**: Using system `json/json.h`
+3. **JSON Headers**: Using system `json/json.h**
+4. **HDF5 Runtime Warnings**: Non-fatal HDF5 errors appear during simulation (dataspace/dataset ID validation). The validation pipeline passes, but further investigation needed.
 
 #### **Code Quality (To Do):**
-1. **`Atom` Class**: Still large (500+ lines), needs refactoring
-2. **Exception Handling**: Still uses `EXIT()` function instead of exceptions
-3. **RAII for HDF5**: Manual resource management in `reporter.cc`
-4. **Test Coverage**: Limited, needs expansion
+1. **`Atom` Class**: Still large (~320 lines), could benefit from further refactoring
+2. **Test Coverage**: Missing System and Reporter unit tests
+3. **Configuration Overrides**: Stubbed in main.cc, not yet implemented
 
 ## Build Instructions
 
@@ -74,14 +110,18 @@ cmake --build build -j
 
 ### **Available Tests:**
 1. **Simple Tests**: `./vegas_simple_tests` - Basic functionality tests
-2. **Google Tests**: If GTest found, `./vegas_tests` (not built by default)
-3. **Integration**: Manual testing with JSON files
+2. **Integration Tests**: `./vegas_integration_tests` - SpinModel factory and Atom integration
+3. **Validation Test**: `./validate.sh` - Complete end-to-end pipeline validation
+4. **Google Tests**: If GTest found, `./vegas_tests` (not built by default)
 
 ### **Test Coverage Areas:**
 - Floating point comparisons (`fp_equal`, `fp_not_equal`)
 - Constants and type definitions
 - Array operations
 - Safe string-to-double conversion
+- SpinModel factory and concrete implementations
+- Atom-SpinModel integration
+- HDF5 output structure validation
 
 ## Code Structure
 
@@ -92,13 +132,19 @@ cmake --build build -j
 - `include/lattice.h` - Lattice class
 - `include/reporter.h` - HDF5 output class
 - `include/starter.h` - JSON configuration parser
-- `include/spin_model.h` - Spin model abstraction (partial)
+- `include/spin_model.h` - Spin model abstraction
 
 ### **Recent Changes:**
-1. **`params.h`**: Added `EPSILON`, floating point comparison functions, constants
-2. **`system.cc`**: Added `safe_stod()`, fixed division by zero, updated magic numbers
-3. **`starter.cc`**: Enhanced `CHECKFILE()` with security checks
-4. **`CMakeLists.txt`**: Improved dependency detection and linking
+1. **`params.h`**: Added `safe_stod` declarations and constants
+2. **`system.cc`**: Updated `randomizeSpin` call (fixed parameter count), added `safe_stod` overload
+3. **`starter.cc`**: Minor updates (already had security improvements)
+4. **`CMakeLists.txt`**: Added `spin_model.cc` and `test_integration.cc` to build targets
+5. **`include/atom.h`**: Added `SpinModel` pointer, move semantics, new public methods
+6. **`include/spin_model.h`**: Created (SpinModel base class and factory declaration)
+7. **`src/atom.cc`**: Implemented move constructors, updated `setModel` to use SpinModel factory, added new method implementations
+8. **`src/spin_model.cc`**: Created (implementations of all concrete SpinModels and factory function)
+9. **`src/lattice.cc`**: Fixed Atom assignment to use `std::move`
+10. **Documentation**: Added `WORKFLOW.md`, `validate.sh`, updated `README.md`, created test system
 
 ## Development Guidelines
 
@@ -121,23 +167,32 @@ cmake --build build -j
 
 ## Next Development Phases
 
-### **Phase 1: Testing & Validation (High Priority)**
-1. Create integration tests with sample data
-2. Test JSON parsing with `example_config.json`
-3. Verify HDF5 output functionality
-4. Install Python dependencies for analyzers (h5py, matplotlib)
+### **Phase 1: Critical Fixes (High Priority)**
+1. **Fix HDF5 Resource Leaks**: Implement RAII wrappers, ensure all HDF5 handles are properly closed (Completed)
+2. **Fix Duplicate EXIT() Definitions**: Resolve ODR violation, centralize error handling (Completed)
+3. **Update Dockerfile**: Support both system packages and Conan, add Python dependencies (Completed)
+4. **Improve Python Analyzers**: Add type hints, better error handling, dependency management
 
-### **Phase 2: Refactoring (Medium Priority)**
-1. Complete `SpinModel` abstraction and refactor `Atom` class
-2. Replace `EXIT()` with exception handling
-3. Implement RAII wrappers for HDF5 resources
-4. Add comprehensive unit tests
+### **Phase 2: Code Quality & Testing (Medium Priority)**
+1. **Replace EXIT() with Exception Hierarchy**: Create proper exception classes, convert all EXIT() calls (Completed)
+2. **Expand Test Coverage**: Added unit tests for Atom and Lattice; still missing System and Reporter unit tests
+3. **Refactor Atom Class**: Further extract spin logic to SpinModel, improve encapsulation
+4. **Add Integration Tests**: Test full pipeline with various configurations
 
-### **Phase 3: Features (Low Priority)**
-1. Parallelization (OpenMP/MPI support)
-2. Checkpoint/restart functionality
-3. Performance optimization
-4. GUI/Web interface
+### ✅ **Phase 2.5: CLI Enhancement (Completed)**
+1. **Argument Parser**: Implemented proper command-line argument parsing with subcommands using cxxopts
+2. **Enhanced Help System**: Comprehensive help with examples and configuration options
+3. **Verbosity Control**: Added --verbose, --quiet, and --no-color options
+4. **Configuration Overrides**: Added options like --mcs, --seed, --kb, --output, --sample, --initialstate (stubbed, with warning)
+5. **Progress Display**: Improved progress indicators with optional detailed output (future)
+6. **Version Information**: Added --version flag and build information
+
+### **Phase 3: Features & Performance (Low Priority)**
+1. **Parallelization**: Add OpenMP/MPI support for temperature/field point parallelism
+2. **Performance Optimization**: Profile and optimize hot paths, improve cache locality
+3. **Checkpoint/Restart**: Add simulation checkpointing for long runs
+4. **GUI/Web Interface**: Create user-friendly interface for configuration and visualization
+5. **CLI Analysis Integration**: Direct access to Python analyzers via command line
 
 ## Agent Workflow
 
@@ -145,7 +200,8 @@ cmake --build build -j
 1. Read this AGENTS.md file
 2. Check `git status` for uncommitted changes
 3. Verify build works: `cd build && make clean && make`
-4. Run tests: `./vegas_simple_tests`
+4. Run tests: `./vegas_simple_tests` and `./vegas_integration_tests`
+5. Run validation: `./validate.sh` (optional but recommended)
 
 ### **Before Making Changes:**
 1. Understand the architecture (see README.md)
@@ -156,8 +212,10 @@ cmake --build build -j
 ### **After Making Changes:**
 1. Test compilation: `cd build && make`
 2. Run basic tests: `./vegas_simple_tests`
-3. Test main executable: `./vegas --help`
-4. Consider adding/updating tests
+3. Run integration tests: `./vegas_integration_tests`
+4. Test main executable: `./vegas --help`
+5. Consider adding/updating tests
+6. Run validation script if changes affect pipeline: `./validate.sh`
 
 ### **Commit Guidelines:**
 1. Use descriptive commit messages
@@ -224,11 +282,34 @@ sudo apt-get install \
 ## Contact & Resources
 
 - **Repository**: https://github.com/jdalzatec/vegas
-- **Documentation**: README.md, FORMATS.md
-- **Examples**: `example_config.json`
-- **Tests**: `tests/` directory
+- **Documentation**: README.md, AGENTS.md, FORMATS.md, WORKFLOW.md
+- **Examples**: `example_config.json`, `test_system/` directory
+- **Tests**: `tests/` directory, `validate.sh` validation script
 
 ## Version History
+
+### **2026-02-20**: Code Quality Overhaul (v2.1.0)
+- Fixed dangling pointer in Atom neighbor storage (indices instead of pointers)
+- Fixed HDF5 handle leaks on error paths in Reporter
+- Implemented undefined Atom methods (getAnisotropyUnit, getTypeAnisotropy, getKan)
+- Created ConfigParser and SystemBuilder infrastructure
+- Refactored CREATE_SYSTEM() and Reporter() God functions
+- Added comprehensive exception hierarchy
+- Added context managers and type hints to Python analyzers
+- Updated version to 2.1.0
+
+### **2026-02-17**: SpinModel Abstraction and Validation Pipeline
+- Implemented SpinModel base class with factory pattern
+- Added comprehensive integration tests
+- Created end-to-end validation system with test examples
+- Set up Python environment with uv and requirements.txt
+- Added workflow documentation and automated validation script
+- Fixed move semantics issues in Atom and Lattice classes
+- Fixed HDF5 resource leaks in `reporter.cc` (implemented RAII)
+- Fixed duplicate `EXIT()` definitions (ODR violation) with `error.h`
+- Implemented exception hierarchy and replaced all EXIT() calls with specific exceptions
+- Updated Dockerfile to support system packages and Python dependencies
+- Enhanced command-line interface with subcommands, verbosity control, and configuration override options
 
 ### **2025-02-17**: Major Code Quality Improvements
 - Fixed critical vulnerabilities (atof, division by zero, etc.)
@@ -245,5 +326,5 @@ sudo apt-get install \
 
 ---
 
-*Last updated: February 2025*  
+*Last updated: February 2026*  
 *Maintained by: VEGAS Development Team*
