@@ -2,6 +2,8 @@
 #include "../include/rlutil.h"
 #include "../include/starter.h"
 #include "../include/exception.h"
+#include "../include/config_parser.h"
+#include "../include/system_builder.h"
 #include <cxxopts.hpp>
 #include "json/json.h"
 
@@ -9,7 +11,9 @@
 #include <string>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <vector>
+#include <optional>
 
 // Many functions for checking, errors and read the information were
 // defined in a namespace STARTER into the file starter.h
@@ -23,14 +27,20 @@ constexpr const char* VEGAS_BUILD_TIME = __TIME__;
 // Forward declarations
 void print_version();
 void print_header(bool use_color = true);
-void run_simulation(const std::string& config_file, bool verbose = true, bool use_color = true);
-void analyze_output(const std::string& h5_file, bool verbose = true);
-void validate_config(const std::string& config_file, bool verbose = true);
+void run_simulation(const std::string& config_file, bool verbose = true, bool use_color = true,
+    const std::optional<Index>& mcsOverride = std::nullopt,
+    const std::optional<Index>& seedOverride = std::nullopt,
+    const std::optional<Real>& kbOverride = std::nullopt,
+    const std::optional<std::string>& outputOverride = std::nullopt,
+    const std::optional<std::string>& sampleOverride = std::nullopt,
+    const std::optional<std::string>& initialStateOverride = std::nullopt);
+void analyze_output(const std::string& h5_file, bool verbose = true, bool use_color = true);
+void validate_config(const std::string& config_file, bool verbose = true, bool use_color = true);
 void print_info(bool verbose = true);
-void warn_about_overrides(const cxxopts::ParseResult& result, bool verbose);
+void report_overrides(const cxxopts::ParseResult& result, bool verbose);
 
 // Helper function implementations
-void warn_about_overrides(const cxxopts::ParseResult& result, bool verbose) {
+void report_overrides(const cxxopts::ParseResult& result, bool verbose) {
     if (!verbose) return;
     
     static const char* override_options[] = {
@@ -45,12 +55,12 @@ void warn_about_overrides(const cxxopts::ParseResult& result, bool verbose) {
     }
     
     if (!present_overrides.empty()) {
-        std::cerr << "Warning: Configuration overrides (";
+        std::cout << "Applying configuration overrides: ";
         for (size_t i = 0; i < present_overrides.size(); ++i) {
-            if (i > 0) std::cerr << ", ";
-            std::cerr << "--" << present_overrides[i];
+            if (i > 0) std::cout << ", ";
+            std::cout << "--" << present_overrides[i];
         }
-        std::cerr << ") are not yet implemented and will be ignored.\n";
+        std::cout << "\n";
     }
 }
 
@@ -120,17 +130,27 @@ void print_header(bool use_color) {
     rlutil::resetColor();
 }
 
-void run_simulation(const std::string& config_file, bool verbose, bool use_color) {
+void run_simulation(const std::string& config_file, bool verbose, bool use_color,
+    const std::optional<Index>& mcsOverride,
+    const std::optional<Index>& seedOverride,
+    const std::optional<Real>& kbOverride,
+    const std::optional<std::string>& outputOverride,
+    const std::optional<std::string>& sampleOverride,
+    const std::optional<std::string>& initialStateOverride)
+{
     if (verbose && use_color) {
         print_header(use_color);
     } else if (verbose) {
         std::cout << "VEGAS simulation started\n";
     }
     
-    // The second argument to CREATE_SYSTEM controls printing
-    System system_ = CREATE_SYSTEM(config_file, verbose);
+    vegas::SimulationConfig config = vegas::ConfigParser::parse(config_file);
+    config.applyOverrides(mcsOverride, seedOverride, kbOverride, outputOverride, sampleOverride, initialStateOverride);
     
-    // Run the simulation
+    vegas::SystemBuilder builder;
+    builder.withConfig(config);
+    System system_ = builder.build();
+    
     system_.cycle();
     
     if (verbose) {
@@ -145,18 +165,94 @@ void run_simulation(const std::string& config_file, bool verbose, bool use_color
     }
 }
 
-void analyze_output(const std::string& h5_file, bool verbose) {
-    // TODO: Implement Python analyzer integration
+void analyze_output(const std::string& h5_file, bool verbose, bool use_color) {
+    std::ifstream h5_check(h5_file);
+    if (!h5_check.good()) {
+        throw vegas::FileIOException("HDF5 file not found: " + h5_file);
+    }
+    h5_check.close();
+    
+    std::string analyzer = "analyzers/vegas-analyzer-lite.py";
+    std::ifstream analyzer_check(analyzer);
+    if (!analyzer_check.good()) {
+        if (use_color) rlutil::setColor(rlutil::LIGHTRED);
+        std::cerr << "Analyzer script not found: " << analyzer << "\n";
+        std::cerr << "Please ensure the analyzers/ directory exists and contains the Python scripts.\n";
+        if (use_color) rlutil::resetColor();
+        throw vegas::FileIOException("Analyzer script not found: " + analyzer);
+    }
+    analyzer_check.close();
+    
+    std::string python = "python3";
+    std::ifstream venv_check(".venv/bin/python3");
+    if (venv_check.good()) {
+        python = ".venv/bin/python3";
+    }
+    venv_check.close();
+    
     if (verbose) {
-        std::cout << "Analysis of " << h5_file << " not yet implemented.\n";
-        std::cout << "Please use the Python analyzers in the analyzers/ directory.\n";
+        std::cout << "Running analysis on: " << h5_file << "\n";
+        std::cout << "Using analyzer: " << analyzer << "\n\n";
+    }
+    
+    std::string cmd = python + " " + analyzer + " " + h5_file;
+    int result = std::system(cmd.c_str());
+    
+    if (result != 0) {
+        if (use_color) rlutil::setColor(rlutil::LIGHTRED);
+        std::cerr << "Analyzer failed with exit code: " << result << "\n";
+        if (use_color) rlutil::resetColor();
+        throw vegas::SimulationException("Analyzer failed with exit code: " + std::to_string(result));
+    }
+    
+    if (verbose) {
+        std::cout << "\nAnalysis complete.\n";
     }
 }
 
-void validate_config(const std::string& config_file, bool verbose) {
-    // TODO: Implement config validation
+void validate_config(const std::string& config_file, bool verbose, bool use_color) {
     if (verbose) {
-        std::cout << "Config validation for " << config_file << " not yet implemented.\n";
+        std::cout << "Validating configuration: " << config_file << "\n\n";
+    }
+    
+    try {
+        vegas::SimulationConfig config = vegas::ConfigParser::parse(config_file);
+        
+        if (verbose) {
+            std::cout << "Configuration valid!\n\n";
+            std::cout << "  Sample file: " << config.sampleFile << "\n";
+            std::cout << "  Output file: " << config.outputFile << "\n";
+            std::cout << "  MCS: " << config.mcs << "\n";
+            std::cout << "  Seed: " << config.seed << "\n";
+            std::cout << "  Boltzmann constant: " << config.kb << "\n";
+            std::cout << "  Temperature points: " << config.temperatures.size() << "\n";
+            if (!config.temperatures.empty()) {
+                std::cout << "    Range: " << config.temperatures.front() 
+                          << " to " << config.temperatures.back() << "\n";
+            }
+            std::cout << "  Field points: " << config.fields.size() << "\n";
+            if (!config.fields.empty()) {
+                std::cout << "    Range: " << config.fields.front() 
+                          << " to " << config.fields.back() << "\n";
+            }
+            if (config.hasInitialState) {
+                std::cout << "  Initial state: " << config.initialStateFile << "\n";
+            }
+            if (config.hasAnisotropy) {
+                std::cout << "  Anisotropy files: " << config.anisotropyFiles.size() << "\n";
+                for (const auto& file : config.anisotropyFiles) {
+                    std::cout << "    - " << file << "\n";
+                }
+            }
+            std::cout << "\nValidation complete.\n";
+        } else {
+            std::cout << "Configuration valid: " << config_file << "\n";
+        }
+    } catch (const vegas::VEGASException& e) {
+        if (use_color) rlutil::setColor(rlutil::LIGHTRED);
+        std::cerr << "Validation failed: " << e.what() << "\n";
+        if (use_color) rlutil::resetColor();
+        throw;
     }
 }
 
@@ -239,9 +335,16 @@ int main(int argc, char const *argv[]) {
                 std::cout << "Note: Using backward compatibility mode. Consider using 'vegas run " << config_file << "'\n";
             }
             
-            warn_about_overrides(result, verbose);
+            report_overrides(result, verbose);
             
-            run_simulation(config_file, verbose, use_color);
+            run_simulation(config_file, verbose, use_color,
+                result.count("mcs") ? std::optional<Index>(result["mcs"].as<Index>()) : std::nullopt,
+                result.count("seed") ? std::optional<Index>(result["seed"].as<Index>()) : std::nullopt,
+                result.count("kb") ? std::optional<Real>(result["kb"].as<Real>()) : std::nullopt,
+                result.count("output") ? std::optional<std::string>(result["output"].as<std::string>()) : std::nullopt,
+                result.count("sample") ? std::optional<std::string>(result["sample"].as<std::string>()) : std::nullopt,
+                result.count("initialstate") ? std::optional<std::string>(result["initialstate"].as<std::string>()) : std::nullopt
+            );
             return 0;
         }
         
@@ -260,23 +363,30 @@ int main(int argc, char const *argv[]) {
             }
             std::string config_file = result["input"].as<std::string>();
             
-            warn_about_overrides(result, verbose);
+            report_overrides(result, verbose);
             
-            run_simulation(config_file, verbose, use_color);
+            run_simulation(config_file, verbose, use_color,
+                result.count("mcs") ? std::optional<Index>(result["mcs"].as<Index>()) : std::nullopt,
+                result.count("seed") ? std::optional<Index>(result["seed"].as<Index>()) : std::nullopt,
+                result.count("kb") ? std::optional<Real>(result["kb"].as<Real>()) : std::nullopt,
+                result.count("output") ? std::optional<std::string>(result["output"].as<std::string>()) : std::nullopt,
+                result.count("sample") ? std::optional<std::string>(result["sample"].as<std::string>()) : std::nullopt,
+                result.count("initialstate") ? std::optional<std::string>(result["initialstate"].as<std::string>()) : std::nullopt
+            );
         } else if (command == "analyze") {
             if (!result.count("input")) {
                 std::cerr << "Error: analyze command requires an HDF5 output file.\n";
                 return EXIT_FAILURE;
             }
             std::string h5_file = result["input"].as<std::string>();
-            analyze_output(h5_file, verbose);
+            analyze_output(h5_file, verbose, use_color);
         } else if (command == "validate") {
             if (!result.count("input")) {
                 std::cerr << "Error: validate command requires a configuration file.\n";
                 return EXIT_FAILURE;
             }
             std::string config_file = result["input"].as<std::string>();
-            validate_config(config_file, verbose);
+            validate_config(config_file, verbose, use_color);
         } else if (command == "info") {
             print_info(verbose);
         } else {
@@ -286,10 +396,16 @@ int main(int argc, char const *argv[]) {
                     std::cout << "Note: Using backward compatibility mode. Consider using 'vegas run " << command << "'\n";
                 }
                 
-                // Check for override options (not yet implemented)
-                warn_about_overrides(result, verbose);
+                report_overrides(result, verbose);
                 
-                run_simulation(command, verbose, use_color);
+                run_simulation(command, verbose, use_color,
+                    result.count("mcs") ? std::optional<Index>(result["mcs"].as<Index>()) : std::nullopt,
+                    result.count("seed") ? std::optional<Index>(result["seed"].as<Index>()) : std::nullopt,
+                    result.count("kb") ? std::optional<Real>(result["kb"].as<Real>()) : std::nullopt,
+                    result.count("output") ? std::optional<std::string>(result["output"].as<std::string>()) : std::nullopt,
+                    result.count("sample") ? std::optional<std::string>(result["sample"].as<std::string>()) : std::nullopt,
+                    result.count("initialstate") ? std::optional<std::string>(result["initialstate"].as<std::string>()) : std::nullopt
+                );
             } else {
                 std::cerr << "Error: Unknown command '" << command << "'. Use --help for usage.\n";
                 return EXIT_FAILURE;

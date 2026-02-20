@@ -5,6 +5,7 @@
 #include "json/json.h"
 #include <string>
 #include <vector>
+#include <optional>
 
 namespace vegas {
 
@@ -20,6 +21,15 @@ struct SimulationConfig {
     Real kb = 1.0;
     bool hasInitialState = false;
     bool hasAnisotropy = false;
+    
+    void applyOverrides(
+        const std::optional<Index>& mcsOverride,
+        const std::optional<Index>& seedOverride,
+        const std::optional<Real>& kbOverride,
+        const std::optional<std::string>& outputOverride,
+        const std::optional<std::string>& sampleOverride,
+        const std::optional<std::string>& initialStateOverride
+    );
 };
 
 class ConfigParser {

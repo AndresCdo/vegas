@@ -6,6 +6,35 @@
 
 namespace vegas {
 
+void SimulationConfig::applyOverrides(
+    const std::optional<Index>& mcsOverride,
+    const std::optional<Index>& seedOverride,
+    const std::optional<Real>& kbOverride,
+    const std::optional<std::string>& outputOverride,
+    const std::optional<std::string>& sampleOverride,
+    const std::optional<std::string>& initialStateOverride)
+{
+    if (mcsOverride.has_value()) {
+        mcs = mcsOverride.value();
+    }
+    if (seedOverride.has_value()) {
+        seed = seedOverride.value();
+    }
+    if (kbOverride.has_value()) {
+        kb = kbOverride.value();
+    }
+    if (outputOverride.has_value()) {
+        outputFile = outputOverride.value();
+    }
+    if (sampleOverride.has_value()) {
+        sampleFile = sampleOverride.value();
+    }
+    if (initialStateOverride.has_value()) {
+        initialStateFile = initialStateOverride.value();
+        hasInitialState = true;
+    }
+}
+
 SimulationConfig ConfigParser::parse(const std::string& jsonFile) {
     SimulationConfig config;
     
