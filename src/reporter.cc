@@ -22,6 +22,7 @@ void Reporter::initializeHandles()
     this->finalstates_dset = -1;
     this->memspace_id_finalstates = -1;
     this->dataspace_id_finalstates = -1;
+    this->closed_ = false;
 }
 
 hid_t Reporter::createCompressionProperties()
@@ -314,6 +315,10 @@ void Reporter::partial_report(
 
 void Reporter::close()
 {
+    if (this->closed_) {
+        return;
+    }
+
     for (size_t i = 0; i < dataspace_id_mag_x_.size(); ++i)
     {
         if (dataspace_id_mag_x_[i] >= 0) {
@@ -394,6 +399,8 @@ void Reporter::close()
         this->status = H5Fclose(this->file);
         file = -1;
     }
+
+    this->closed_ = true;
 }
 
 Reporter::~Reporter()

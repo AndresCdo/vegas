@@ -68,6 +68,8 @@ private:
 
     hsize_t     dims_select_finalstates[1];
 
+    bool        closed_;
+
     // Private helper methods for constructor initialization
     void initializeHandles();
     hid_t createCompressionProperties();
