@@ -35,7 +35,7 @@ VEGAS (VEctor General Atomistic Simulator) is a Monte Carlo simulation package f
 7. **End-to-End Validation**: Complete test system with minimal example and verification scripts
 8. **Unit Tests Expanded**: Added comprehensive unit tests for Atom and Lattice classes
 9. **Exception Hierarchy**: Implemented comprehensive exception classes, replaced all EXIT() calls with specific exceptions
-10. **CLI Enhancement**: Added professional command-line interface with subcommands (run, analyze, validate, info), verbosity control, colored output, configuration override options (stubbed), and backward compatibility
+10. **CLI Enhancement**: Added professional command-line interface with subcommands (run, analyze, validate, info), verbosity control, colored output, configuration overrides, and backward compatibility
 
 #### **2026-02-20: Code Quality Overhaul (v2.1.0)**
 
@@ -73,8 +73,7 @@ VEGAS (VEctor General Atomistic Simulator) is a Monte Carlo simulation package f
 
 #### **Code Quality (To Do):**
 1. **`Atom` Class**: Still large (~320 lines), could benefit from further refactoring
-2. **Test Coverage**: Missing System and Reporter unit tests
-3. **Configuration Overrides**: Stubbed in main.cc, not yet implemented
+2. **HDF5 Runtime Warnings**: Non-fatal HDF5 errors appear during tests (further investigation needed)
 
 ## Build Instructions
 
@@ -109,10 +108,14 @@ cmake --build build -j
 ## Testing
 
 ### **Available Tests:**
-1. **Simple Tests**: `./vegas_simple_tests` - Basic functionality tests
-2. **Integration Tests**: `./vegas_integration_tests` - SpinModel factory and Atom integration
-3. **Validation Test**: `./validate.sh` - Complete end-to-end pipeline validation
-4. **Google Tests**: If GTest found, `./vegas_tests` (not built by default)
+1. **Simple Tests**: `./vegas_simple_tests` - Basic functionality tests (6 tests)
+2. **Integration Tests**: `./vegas_integration_tests` - SpinModel factory and Atom integration (4 tests)
+3. **ConfigParser Tests**: `./vegas_config_parser_tests` - Configuration parsing (8 tests)
+4. **SystemBuilder Tests**: `./vegas_system_builder_tests` - Builder pattern tests (8 tests)
+5. **System Tests**: `./vegas_system_tests` - System class tests (8 tests)
+6. **Reporter Tests**: `./vegas_reporter_tests` - HDF5 output tests (6 tests)
+7. **Validation Test**: `./validate.sh` - Complete end-to-end pipeline validation
+8. **Google Tests**: If GTest found, `./vegas_tests` (not built by default)
 
 ### **Test Coverage Areas:**
 - Floating point comparisons (`fp_equal`, `fp_not_equal`)
@@ -175,24 +178,25 @@ cmake --build build -j
 
 ### **Phase 2: Code Quality & Testing (Medium Priority)**
 1. **Replace EXIT() with Exception Hierarchy**: Create proper exception classes, convert all EXIT() calls (Completed)
-2. **Expand Test Coverage**: Added unit tests for Atom and Lattice; still missing System and Reporter unit tests
+2. **Expand Test Coverage**: Unit tests added for Atom, Lattice, System, Reporter, ConfigParser, and SystemBuilder (40 tests total)
 3. **Refactor Atom Class**: Further extract spin logic to SpinModel, improve encapsulation
-4. **Add Integration Tests**: Test full pipeline with various configurations
+4. **Add Integration Tests**: Test full pipeline with various configurations (Completed)
 
 ### ✅ **Phase 2.5: CLI Enhancement (Completed)**
 1. **Argument Parser**: Implemented proper command-line argument parsing with subcommands using cxxopts
 2. **Enhanced Help System**: Comprehensive help with examples and configuration options
 3. **Verbosity Control**: Added --verbose, --quiet, and --no-color options
-4. **Configuration Overrides**: Added options like --mcs, --seed, --kb, --output, --sample, --initialstate (stubbed, with warning)
-5. **Progress Display**: Improved progress indicators with optional detailed output (future)
-6. **Version Information**: Added --version flag and build information
+4. **Configuration Overrides**: Fully implemented --mcs, --seed, --kb, --output, --sample, --initialstate
+5. **Validate Subcommand**: Configuration validation with verbose output using ConfigParser
+6. **Analyze Subcommand**: Python analyzer integration with venv detection
+7. **Progress Display**: Improved progress indicators with optional detailed output (future)
+8. **Version Information**: Added --version flag and build information
 
 ### **Phase 3: Features & Performance (Low Priority)**
 1. **Parallelization**: Add OpenMP/MPI support for temperature/field point parallelism
 2. **Performance Optimization**: Profile and optimize hot paths, improve cache locality
 3. **Checkpoint/Restart**: Add simulation checkpointing for long runs
 4. **GUI/Web Interface**: Create user-friendly interface for configuration and visualization
-5. **CLI Analysis Integration**: Direct access to Python analyzers via command line
 
 ## Agent Workflow
 
@@ -287,6 +291,14 @@ sudo apt-get install \
 - **Tests**: `tests/` directory, `validate.sh` validation script
 
 ## Version History
+
+### **2026-02-20**: CLI Enhancements (v2.2.0)
+- Implemented `vegas validate` subcommand using ConfigParser with verbose output
+- Implemented `vegas analyze` subcommand with Python analyzer integration and venv detection
+- Implemented configuration overrides (--mcs, --seed, --kb, --output, --sample, --initialstate)
+- Added `closed_` flag to Reporter class to prevent HDF5 double-close
+- Added SimulationConfig::applyOverrides() method for clean override handling
+- Updated report_overrides() to inform users when overrides are applied
 
 ### **2026-02-20**: Code Quality Overhaul (v2.1.0)
 - Fixed dangling pointer in Atom neighbor storage (indices instead of pointers)
