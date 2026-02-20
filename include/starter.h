@@ -13,10 +13,11 @@ class System;
 #include <tuple>
 
 #include "json/json.h"
+#include "error.h"
 
 namespace STARTER {
     // Message to exit and launch an error.
-    void EXIT(std::string message);
+    using ::EXIT;
 
     // Function to check some regular issues
     void CHECK(std::string sample,
@@ -47,6 +48,9 @@ namespace STARTER {
 
     // Function to create a system from a json file
     System CREATE_SYSTEM(std::string jsonfile, bool print);
+    
+    // Function to create a system from a json file with overrides
+    System CREATE_SYSTEM(std::string jsonfile, bool print, const Json::Value& overrides);
 }
 
 #endif // STARTER_H
