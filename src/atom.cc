@@ -26,7 +26,7 @@ Atom::Atom(Index index, Array spin, Array position)
 
     this -> index_ = index;
     this -> spin_ = spin;
-    this -> nbhs_ = std::vector<Atom*>();
+    this -> neighborIndexes_ = std::vector<Index>();
     this -> exchanges_ = std::vector<Real>();
     this -> position_ = position;
     this -> spinNorm_ = sqrt((this -> spin_ * this -> spin_).sum());
@@ -48,6 +48,11 @@ Atom::Atom(Index index, Array spin, Array position)
     this -> model_ = "heisenberg";
     this -> spinModel_ = createSpinModel(this -> model_);
 
+    // Initialize anisotropy members with defaults
+    this -> anisotropyUnit_ = Array{0.0, 0.0, 1.0};  // Default unit vector along z
+    this -> typeAnisotropy_ = "";
+    this -> kan_ = 0.0;
+
     this -> oldSpin_ = this -> spin_;
 }
 
@@ -60,7 +65,7 @@ Atom::~Atom()
 Atom::Atom(Atom&& other) noexcept
     : index_(std::move(other.index_))
     , spin_(std::move(other.spin_))
-    , nbhs_(std::move(other.nbhs_))
+    , neighborIndexes_(std::move(other.neighborIndexes_))
     , exchanges_(std::move(other.exchanges_))
     , position_(std::move(other.position_))
     , spinNorm_(std::move(other.spinNorm_))
@@ -74,6 +79,9 @@ Atom::Atom(Atom&& other) noexcept
     , spinModel_(std::move(other.spinModel_))
     , Sproj_(std::move(other.Sproj_))
     , anisotropyTerms_(std::move(other.anisotropyTerms_))
+    , anisotropyUnit_(std::move(other.anisotropyUnit_))
+    , typeAnisotropy_(std::move(other.typeAnisotropy_))
+    , kan_(std::move(other.kan_))
 {
 }
 
@@ -83,7 +91,7 @@ Atom& Atom::operator=(Atom&& other) noexcept
     if (this != &other) {
         index_ = std::move(other.index_);
         spin_ = std::move(other.spin_);
-        nbhs_ = std::move(other.nbhs_);
+        neighborIndexes_ = std::move(other.neighborIndexes_);
         exchanges_ = std::move(other.exchanges_);
         position_ = std::move(other.position_);
         spinNorm_ = std::move(other.spinNorm_);
@@ -97,6 +105,9 @@ Atom& Atom::operator=(Atom&& other) noexcept
         spinModel_ = std::move(other.spinModel_);
         Sproj_ = std::move(other.Sproj_);
         anisotropyTerms_ = std::move(other.anisotropyTerms_);
+        anisotropyUnit_ = std::move(other.anisotropyUnit_);
+        typeAnisotropy_ = std::move(other.typeAnisotropy_);
+        kan_ = std::move(other.kan_);
     }
     return *this;
 }
@@ -111,9 +122,9 @@ const Index& Atom::getIndex() const
     return this -> index_;
 }
 
-const std::vector<Atom*>& Atom::getNbhs() const
+const std::vector<Index>& Atom::getNeighborIndexes() const
 {
-    return this -> nbhs_;
+    return this -> neighborIndexes_;
 }
 
 const Real& Atom::getSpinNorm() const
@@ -156,9 +167,9 @@ void Atom::setPosition(const Array& position)
     this -> position_ = position;
 }
 
-void Atom::setNbhs(const std::vector<Atom*>& nbhs)
+void Atom::setNeighborIndexes(const std::vector<Index>& indices)
 {
-    this -> nbhs_ = nbhs;
+    this -> neighborIndexes_ = indices;
 }
 
 void Atom::setSpin(const Array& spin)
@@ -177,9 +188,9 @@ void Atom::setType(const std::string& type)
     this -> type_ = type;
 }
 
-void Atom::addNbh(Atom* nbh)
+void Atom::addNeighborIndex(Index neighborIndex)
 {
-    this -> nbhs_.push_back(nbh);
+    this -> neighborIndexes_.push_back(neighborIndex);
 }
 
 void Atom::addExchange(Real exchange)
@@ -214,12 +225,12 @@ void Atom::setModel(const std::string& model)
     this -> spinModel_ = createSpinModel(model);
 }
 
-Real Atom::getExchangeEnergy() const
+Real Atom::getExchangeEnergy(const std::vector<Atom>& atoms) const
 {
     Real energy = 0.0;
     Index nbh_c = 0;
-    for (auto&& nbh : this -> nbhs_)
-        energy -= this -> exchanges_.at(nbh_c++) * (this -> spin_ * nbh -> getSpin()).sum();
+    for (auto&& nbhIndex : this -> neighborIndexes_)
+        energy -= this -> exchanges_.at(nbh_c++) * (this -> spin_ * atoms.at(nbhIndex).getSpin()).sum();
     return energy;
 }
 
@@ -299,4 +310,34 @@ void Atom::randomizeSpin(
     if (this -> spinModel_) {
         this -> spinModel_->randomizeSpin(engine, realRandomGenerator, gaussianRandomGenerator, sigma, *this, num);
     }
+}
+
+const Array& Atom::getAnisotropyUnit() const
+{
+    return this -> anisotropyUnit_;
+}
+
+const std::string& Atom::getTypeAnisotropy() const
+{
+    return this -> typeAnisotropy_;
+}
+
+const Real& Atom::getKan() const
+{
+    return this -> kan_;
+}
+
+void Atom::setAnisotropyUnit(const Array& unit)
+{
+    this -> anisotropyUnit_ = unit;
+}
+
+void Atom::setTypeAnisotropy(const std::string& type)
+{
+    this -> typeAnisotropy_ = type;
+}
+
+void Atom::setKan(Real kan)
+{
+    this -> kan_ = kan;
 }

@@ -5,18 +5,12 @@
 #include <fstream>
 #include <sstream>
 #include "../include/rlutil.h"
+#include "../include/error.h"
 #include <functional>
 #include <stdexcept>
 
 // Message to exit and launch an error.
-void EXIT(std::string message)
-{
-    rlutil::setColor(rlutil::LIGHTRED);
-    std::cout << message << std::endl;
-    std::cout << "Unsuccesful completion !!!" << std::endl;
-    rlutil::resetColor();
-    exit(EXIT_FAILURE);
-}
+
 
 // Safe conversion from string to double with error handling
 Real safe_stod(const std::string& str, const std::string& context)
@@ -32,9 +26,9 @@ Real safe_stod(const std::string& str, const std::string& context)
         
         return value;
     } catch (const std::invalid_argument& e) {
-        EXIT("Invalid number format in " + context + ": '" + str + "'");
+        throw vegas::NumericConversionException("Invalid number format in " + context + ": '" + str + "'");
     } catch (const std::out_of_range& e) {
-        EXIT("Number out of range in " + context + ": '" + str + "'");
+        throw vegas::NumericConversionException("Number out of range in " + context + ": '" + str + "'");
     }
     
     // Should never reach here
@@ -54,7 +48,9 @@ Real safe_stod(const std::string& str, Real default_value)
         }
         
         return value;
-    } catch (...) {
+    } catch (const std::invalid_argument&) {
+        return default_value;
+    } catch (const std::out_of_range&) {
         return default_value;
     }
 }
@@ -198,7 +194,7 @@ Real System::localEnergy(Index index, Real H)
 Real System::localEnergy(const Atom& atom, Real H)
 {
     Real energy = 0.0;
-    energy += atom.getExchangeEnergy();
+    energy += atom.getExchangeEnergy(this -> lattice_.getAtoms());
     energy += atom.getAnisotropyEnergy(atom);
     energy += atom.getZeemanEnergy(H);
     return energy;
@@ -210,7 +206,7 @@ Real System::totalEnergy(Real H)
     Real other_energy = 0.0;
     for (auto& atom : this -> lattice_.getAtoms())
     {
-        exchange_energy += atom.getExchangeEnergy();
+        exchange_energy += atom.getExchangeEnergy(this -> lattice_.getAtoms());
         other_energy += atom.getAnisotropyEnergy(atom);
         other_energy += atom.getZeemanEnergy(H);
     }
@@ -388,7 +384,7 @@ void System::setState(std::string fileState)
             std::cout << norm << " " << atom.getSpinNorm() << " "
                       << fp_equal(norm, atom.getSpinNorm()) << " " << spin
                       << std::endl;
-            EXIT("The spin norm of the site " + std::to_string(atom.getIndex()) + " does not match with the initial state given !!!");
+            throw vegas::SimulationException("The spin norm of the site " + std::to_string(atom.getIndex()) + " does not match with the initial state given !!!");
         }
 
         atom.setSpin(spin);
@@ -412,6 +408,19 @@ void System::setAnisotropies(std::vector<std::string> anisotropyfiles)
                 Real ay = safe_stod(sep[1], "anisotropy y-component");
                 Real az = safe_stod(sep[2], "anisotropy z-component");
                 Real kan = safe_stod(sep[3], "anisotropy constant");
+
+                // Normalize anisotropy unit vector
+                Real norm = std::sqrt(ax*ax + ay*ay + az*az);
+                if (norm > 0.0) {
+                    ax /= norm;
+                    ay /= norm;
+                    az /= norm;
+                }
+
+                // Store anisotropy unit vector and constant in atom
+                this -> lattice_.getAtoms().at(i).setAnisotropyUnit(Array{ax, ay, az});
+                this -> lattice_.getAtoms().at(i).setKan(kan);
+                this -> lattice_.getAtoms().at(i).setTypeAnisotropy("uniaxial");
 
                 std::function<Real(const Atom&)> func = [kan, ax, ay, az](const Atom& atom){
                    return - kan * (ax * atom.getSpin()[0] + ay * atom.getSpin()[1] + az * atom.getSpin()[2]) * (ax * atom.getSpin()[0] + ay * atom.getSpin()[1] + az * atom.getSpin()[2]);
@@ -437,6 +446,15 @@ void System::setAnisotropies(std::vector<std::string> anisotropyfiles)
 
                 Real kan = safe_stod(sep[6], "anisotropy constant");
 
+                // Store anisotropy unit vector (use A direction) and constant in atom
+                // Normalize A for storage
+                Real normA = std::sqrt(Ax*Ax + Ay*Ay + Az*Az);
+                if (normA > 0.0) {
+                    this -> lattice_.getAtoms().at(i).setAnisotropyUnit(Array{Ax/normA, Ay/normA, Az/normA});
+                }
+                this -> lattice_.getAtoms().at(i).setKan(kan);
+                this -> lattice_.getAtoms().at(i).setTypeAnisotropy("biaxial");
+
                 std::function<Real(const Atom&)> func = [kan, A, B, C](const Atom& atom){
                     return - kan * ((atom.getSpin() * A).sum()*(atom.getSpin() * A).sum()*(atom.getSpin() * B).sum()*(atom.getSpin() * B).sum()
                     + (atom.getSpin() * A).sum()*(atom.getSpin() * A).sum()*(atom.getSpin() * C).sum()*(atom.getSpin() * C).sum()
@@ -448,7 +466,7 @@ void System::setAnisotropies(std::vector<std::string> anisotropyfiles)
             }
             else
             {
-                EXIT("The anisotropy file with name " + fileName + " does not have the correct format !!!");
+                throw vegas::InvalidInputException("The anisotropy file with name " + fileName + " does not have the correct format !!!");
             }
         }
     }

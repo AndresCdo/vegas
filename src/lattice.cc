@@ -1,4 +1,5 @@
 #include "../include/lattice.h"
+#include "../include/exception.h"
 
 #include <algorithm>
 
@@ -6,12 +7,24 @@
 Lattice::Lattice(std::string fileName)
 {
     std::ifstream file(fileName);
+    if (!file.is_open()) {
+        throw vegas::FileIOException("Cannot open lattice file: " + fileName);
+    }
 
-    Index num_ions;
-    Index num_interactions;
-    Index num_types;
+    Index num_ions = 0;
+    Index num_interactions = 0;
+    Index num_types = 0;
 
-    file >> num_ions >> num_interactions >> num_types;
+    if (!(file >> num_ions >> num_interactions >> num_types)) {
+        throw vegas::InvalidInputException("Invalid lattice file format (header): " + fileName);
+    }
+
+    if (num_ions == 0) {
+        throw vegas::InvalidInputException("Lattice file has zero atoms: " + fileName);
+    }
+    if (num_types == 0) {
+        throw vegas::InvalidInputException("Lattice file has zero atom types: " + fileName);
+    }
 
     for (Index i = 0; i < num_types; ++i)
     {
@@ -36,7 +49,18 @@ Lattice::Lattice(std::string fileName)
 
     for (Index index = 0; index < num_ions; ++index)
     {
-        file >> index >> px >> py >> pz >> spinNorm >> hx >> hy >> hz >> type >> model;
+        if (!(file >> index >> px >> py >> pz >> spinNorm >> hx >> hy >> hz >> type >> model)) {
+            throw vegas::InvalidInputException("Invalid lattice file format at atom " + std::to_string(index) + ": " + fileName);
+        }
+
+        if (spinNorm <= 0.0) {
+            throw vegas::InvalidInputException("Invalid spin norm at atom " + std::to_string(index) + " in: " + fileName);
+        }
+
+        auto typeIt = this -> mapTypeIndexes_.find(type);
+        if (typeIt == this -> mapTypeIndexes_.end()) {
+            throw vegas::InvalidInputException("Unknown atom type '" + type + "' at atom " + std::to_string(index) + " in: " + fileName);
+        }
 
         Array position({px, py, pz});
 
@@ -61,9 +85,21 @@ Lattice::Lattice(std::string fileName)
     Real exchange;
     for (Index _ = 0; _ < num_interactions; ++_)
     {
-        file >> index >> nbh >> exchange;
-        this -> atoms_.at(index).addNbh(&this -> atoms_.at(nbh));
+        if (!(file >> index >> nbh >> exchange)) {
+            throw vegas::InvalidInputException("Invalid lattice file format at interaction " + std::to_string(_) + ": " + fileName);
+        }
+        if (index >= num_ions) {
+            throw vegas::InvalidInputException("Atom index " + std::to_string(index) + " out of bounds in: " + fileName);
+        }
+        if (nbh >= num_ions) {
+            throw vegas::InvalidInputException("Neighbor index " + std::to_string(nbh) + " out of bounds in: " + fileName);
+        }
+        this -> atoms_.at(index).addNeighborIndex(nbh);
         this -> atoms_.at(index).addExchange(exchange);
+    }
+
+    if (file.fail() && !file.eof()) {
+        throw vegas::InvalidInputException("Error reading lattice file: " + fileName);
     }
 
 }

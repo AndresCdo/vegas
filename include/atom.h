@@ -27,7 +27,7 @@ public:
 
     const Array& getPosition() const;
     const Index& getIndex() const;
-    const std::vector<Atom*>& getNbhs() const;
+    const std::vector<Index>& getNeighborIndexes() const;
     const Real& getSpinNorm() const;
     const Array& getSpin() const;
     const Array& getOldSpin() const;
@@ -48,7 +48,7 @@ public:
 
 
     void setPosition(const Array& position);
-    void setNbhs(const std::vector<Atom*>& nbhs);
+    void setNeighborIndexes(const std::vector<Index>& indices);
     void setExchanges(const std::vector<Real>& exchanges);
     void setType(const std::string& type);
     void setSpin(const Array& spin);
@@ -57,14 +57,18 @@ public:
     void setSproj(const Index& Sproj);
     void setTypeIndex(const Index& typeIndex);
 
-    void addNbh(Atom* nbh);
+    void addNeighborIndex(Index neighborIndex);
     void addExchange(Real exchange);
+    
+    void setAnisotropyUnit(const Array& unit);
+    void setTypeAnisotropy(const std::string& type);
+    void setKan(Real kan);
 
     void changeProjection(Index i, Real value);
     void removePossibleProjection(Index i);
 
 
-    Real getExchangeEnergy() const;
+    Real getExchangeEnergy(const std::vector<Atom>& atoms) const;
     Real getZeemanEnergy(const Real& H) const;
     Real getAnisotropyEnergy(const Atom& atom) const;
 
@@ -89,7 +93,7 @@ public:
 private:
     Array position_;
     Index index_;
-    std::vector<Atom*> nbhs_;
+    std::vector<Index> neighborIndexes_;
     Real spinNorm_;
     Array spin_;
     Array oldSpin_;
@@ -107,6 +111,10 @@ private:
     Index Sproj_;
 
     std::vector< std::function<Real(const Atom&)> > anisotropyTerms_;
+    
+    Array anisotropyUnit_;
+    std::string typeAnisotropy_;
+    Real kan_;
 };
 
 #endif // ATOM_H
