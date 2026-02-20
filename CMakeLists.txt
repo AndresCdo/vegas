@@ -4,6 +4,15 @@ project(vegas LANGUAGES CXX C)
 # Enable testing
 enable_testing()
 
+# Add cxxopts for command line parsing (header-only)
+include(FetchContent)
+FetchContent_Declare(
+    cxxopts
+    GIT_REPOSITORY https://github.com/jarro2783/cxxopts.git
+    GIT_TAG        v3.3.0
+)
+FetchContent_MakeAvailable(cxxopts)
+
 # Try to find packages using MODULE mode first (works with system packages)
 # Then fall back to CONFIG mode (works with Conan)
 find_package(HDF5 REQUIRED COMPONENTS C CXX)
@@ -60,8 +69,10 @@ target_sources(
     ./src/system.cc
     ./src/starter.cc
     ./src/spin_model.cc
+    ./src/config_parser.cc
+    ./src/system_builder.cc
 )
-target_link_libraries(vegas PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
+target_link_libraries(vegas PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES} cxxopts)
 
 # Test executable (if Google Test is available)
 find_package(GTest QUIET)
@@ -75,6 +86,8 @@ if(GTest_FOUND)
         ./src/system.cc
         ./src/starter.cc
         ./src/spin_model.cc
+        ./src/config_parser.cc
+        ./src/system_builder.cc
     )
     target_link_libraries(vegas_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES} GTest::gtest GTest::gtest_main)
     add_test(NAME vegas_tests COMMAND vegas_tests)
@@ -90,6 +103,8 @@ target_sources(
     ./src/system.cc
     ./src/starter.cc
     ./src/spin_model.cc
+    ./src/config_parser.cc
+    ./src/system_builder.cc
 )
 target_link_libraries(vegas_simple_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
 add_test(NAME vegas_simple_tests COMMAND vegas_simple_tests)
@@ -104,6 +119,8 @@ target_sources(
     ./src/system.cc
     ./src/starter.cc
     ./src/spin_model.cc
+    ./src/config_parser.cc
+    ./src/system_builder.cc
 )
 target_link_libraries(vegas_integration_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
 add_test(NAME vegas_integration_tests COMMAND vegas_integration_tests)
