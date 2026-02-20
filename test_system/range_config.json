@@ -1,0 +1,15 @@
+{
+  "sample": "test_system/ferromagnetic_chain.txt",
+  "mcs": 100,
+  "seed": 42,
+  "temperature": {
+    "start": 0.5,
+    "final": 2.0,
+    "points": 5
+  },
+  "field": {
+    "start": 0.0,
+    "final": 1.0,
+    "points": 5
+  }
+}

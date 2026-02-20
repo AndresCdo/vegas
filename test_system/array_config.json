@@ -1,0 +1,7 @@
+{
+  "sample": "test_system/ferromagnetic_chain.txt",
+  "mcs": 100,
+  "seed": 42,
+  "temperature": [0.5, 1.0, 1.5, 2.0],
+  "field": [0.0, 0.5, 1.0, 1.5]
+}

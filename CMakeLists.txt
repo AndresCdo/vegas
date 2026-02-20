@@ -124,3 +124,63 @@ target_sources(
 )
 target_link_libraries(vegas_integration_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
 add_test(NAME vegas_integration_tests COMMAND vegas_integration_tests)
+
+# ConfigParser test executable
+add_executable(vegas_config_parser_tests tests/test_config_parser.cc)
+target_sources(
+    vegas_config_parser_tests PRIVATE
+    ./src/config_parser.cc
+    ./src/atom.cc
+    ./src/lattice.cc
+    ./src/reporter.cc
+    ./src/system.cc
+    ./src/starter.cc
+    ./src/spin_model.cc
+    ./src/system_builder.cc
+)
+target_link_libraries(vegas_config_parser_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
+add_test(NAME vegas_config_parser_tests COMMAND vegas_config_parser_tests)
+
+# SystemBuilder test executable
+add_executable(vegas_system_builder_tests tests/test_system_builder.cc)
+target_sources(
+    vegas_system_builder_tests PRIVATE
+    ./src/config_parser.cc
+    ./src/system_builder.cc
+    ./src/atom.cc
+    ./src/lattice.cc
+    ./src/reporter.cc
+    ./src/system.cc
+    ./src/starter.cc
+    ./src/spin_model.cc
+)
+target_link_libraries(vegas_system_builder_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
+add_test(NAME vegas_system_builder_tests COMMAND vegas_system_builder_tests)
+
+# System test executable
+add_executable(vegas_system_tests tests/test_system.cc)
+target_sources(
+    vegas_system_tests PRIVATE
+    ./src/atom.cc
+    ./src/lattice.cc
+    ./src/reporter.cc
+    ./src/system.cc
+    ./src/starter.cc
+    ./src/spin_model.cc
+    ./src/config_parser.cc
+    ./src/system_builder.cc
+)
+target_link_libraries(vegas_system_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
+add_test(NAME vegas_system_tests COMMAND vegas_system_tests)
+
+# Reporter test executable
+add_executable(vegas_reporter_tests tests/test_reporter.cc)
+target_sources(
+    vegas_reporter_tests PRIVATE
+    ./src/atom.cc
+    ./src/lattice.cc
+    ./src/reporter.cc
+    ./src/spin_model.cc
+)
+target_link_libraries(vegas_reporter_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
+add_test(NAME vegas_reporter_tests COMMAND vegas_reporter_tests)
