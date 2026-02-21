@@ -70,3 +70,23 @@ test_system/*.h5
 test_system/*.mean
 test_system/*.pdf
 test_system/*.xyz
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+analyzers/__pycache__/
+
+# Debug and temporary scripts
+check_*.py
+debug_*.py
+verify_*.py
+test_convention.py
+test_hdf5_simple.cc
+
+# Test artifacts
+test_results.*
+build_test/
+
+# GitHub Actions (local testing)
+.github/
