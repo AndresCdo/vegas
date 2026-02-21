@@ -20,7 +20,7 @@
 using namespace STARTER;
 
 // Version information
-constexpr const char* VEGAS_VERSION = "2.1.0";
+constexpr const char* VEGAS_VERSION = "2.3.0";
 constexpr const char* VEGAS_BUILD_DATE = __DATE__;
 constexpr const char* VEGAS_BUILD_TIME = __TIME__;
 

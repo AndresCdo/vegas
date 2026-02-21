@@ -1,0 +1,141 @@
+/mnt/steam-games/GitHub/vegas/run_all_benchmarks.py:205: RuntimeWarning: invalid value encountered in scalar divide
+  E_0_var = np.std(energy[0]) / abs(E_0)
+============================================================
+VEGAS v2.3.0 Physical Validation Benchmark Suite
+============================================================
+Running: benchmarks/configs/b1_ising_chain.json
+
+=== BENCHMARK B1: 1D Ising Chain ===
+     T |     e_sim |   e_exact | rel_err | Status
+--------------------------------------------------
+ 0.500 |    0.0000 |   -0.9640 | 100.00% |   FAIL
+ 1.000 |    0.0000 |   -0.7616 | 100.00% |   FAIL
+ 1.500 |    0.0000 |   -0.5828 | 100.00% |   FAIL
+ 2.000 |    0.0000 |   -0.4621 | 100.00% |   FAIL
+ 2.500 |    0.0000 |   -0.3799 | 100.00% |   FAIL
+ 3.000 |    0.0000 |   -0.3215 | 100.00% |   FAIL
+ 3.500 |    0.0000 |   -0.2782 | 100.00% |   FAIL
+ 4.000 |    0.0000 |   -0.2449 | 100.00% |   FAIL
+ 4.500 |    0.0000 |   -0.2186 | 100.00% |   FAIL
+ 5.000 |    0.0000 |   -0.1974 | 100.00% |   FAIL
+Running: benchmarks/configs/b2_ising_square.json
+
+=== BENCHMARK B2: 2D Ising Square Lattice ===
+Critical temperature (susceptibility peak): T_c = 1.500
+Critical temperature (specific heat peak):  T_c = 1.500
+Onsager exact T_c:                          T_c = 2.2692
+Deviation from exact: 0.769
+Low-T magnetization (T=1.5): |M|/N = 0.000 (expected > 0.7)
+High-T magnetization (T=3.5): |M|/N = 0.000 (expected < 0.3)
+Running: benchmarks/configs/b3_ferromagnet_ground.json
+
+=== BENCHMARK B3: Ferromagnetic Ground State ===
+Ground state energy: E_0 = 0.0000 per atom (expected: -2.00)
+Relative error: 100.00%
+Energy variance: nan (expected < 0.02)
+Saturation magnetization: |M|/N = 0.0000 (expected > 0.95)
+Running: benchmarks/configs/b4a_ergodicity_up.json
+Running: benchmarks/configs/b4b_ergodicity_down.json
+
+=== BENCHMARK B4: Ergodicity Test ===
+Simulation A (start up):   E = 0.0000 ± 0.0000,  M/N = 0.0000
+Simulation B (start down): E = 0.0000 ± 0.0000,  M/N = 0.0000
+ΔE = 0.0000, 3σ = 0.0000 => DISAGREE
+
+=== BENCHMARK B5: Sigma Freeze Verification ===
+WARNING: Could not extract sigma values from output
+Attempting to parse from last line with Fe...
+Found line: [0m[01;33mETR: 0:0:00[01;34m	(100.00000%)[0m	==>	T = 2.00000; H = 0.00000 Fe 60.00000 
+Running: benchmarks/configs/b6_heisenberg_highT.json
+
+=== BENCHMARK B6: Heisenberg Isotropy Test ===
+First moments:
+  <Mx>/N = 0.0000 (expected ~0, tol < 0.02)
+  <My>/N = 0.0000 (expected ~0, tol < 0.02)
+  <Mz>/N = 0.0000 (expected ~0, tol < 0.02)
+Second moments:
+  <Mx²>/N = 0.0000 (expected ~0.333, tol ±10%)
+  <My²>/N = 0.0000 (expected ~0.333, tol ±10%)
+  <Mz²>/N = 0.0000 (expected ~0.333, tol ±10%)
+
+============================================================
+# VEGAS v2.3.0 Physical Validation Report
+
+**Date**: 2026-02-20 20:35:22
+
+**Build**: Release
+
+**Seed**: 42 (all benchmarks)
+
+
+## Summary
+
+| Benchmark | Description | Status | Key Result |
+|-----------|-------------|--------|------------|
+| B1 | 1D Ising energy vs exact | FAIL | e(T=1.0) = 0.0000 (exact: -0.7616) |
+| B2 | 2D Ising critical temp | FAIL | T_c = 1.50 (exact: 2.269, deviation: 0.769) |
+| B3 | Ferromagnet ground state | FAIL | E_0 = 0.00 (exact: -2.00, rel_error: 100.0%) |
+| B4 | Ergodicity test | FAIL | ΔE = 0.000 σ |
+| B5 | Sigma freeze verification | FAIL | Sigma change = NON-ZERO |
+| B6 | Heisenberg isotropy | FAIL | <Mz>/N = 0.000 |
+
+## Overall Result: 6 FAILURES
+
+
+## Detailed Results
+
+See benchmark output above for detailed numerical values.
+
+
+## Failures
+
+
+### B1
+
+Status: FAIL
+
+Key result: e(T=1.0) = 0.0000 (exact: -0.7616)
+
+
+### B2
+
+Status: FAIL
+
+Key result: T_c = 1.50 (exact: 2.269, deviation: 0.769)
+
+
+### B3
+
+Status: FAIL
+
+Key result: E_0 = 0.00 (exact: -2.00, rel_error: 100.0%)
+
+
+### B4
+
+Status: FAIL
+
+Key result: ΔE = 0.000 σ
+
+
+### B5
+
+Status: FAIL
+
+Key result: Sigma change = NON-ZERO
+
+
+### B6
+
+Status: FAIL
+
+Key result: <Mz>/N = 0.000
+
+
+## Conclusion
+
+6 benchmark(s) failed. See detailed results above for diagnosis.
+
+============================================================
+
+Report saved to: benchmarks/VALIDATION_REPORT.md

@@ -1,0 +1,13 @@
+{
+  "sample": "benchmarks/lattices/ising_chain_100.txt",
+  "mcs": 50000,
+  "kb": 1.0,
+  "seed": 42,
+  "temperature": {
+    "start": 0.5,
+    "final": 5.0,
+    "points": 10
+  },
+  "field": 0.0,
+  "out": "benchmarks/results/b1_ising_chain.h5"
+}

@@ -1,0 +1,13 @@
+{
+  "sample": "benchmarks/lattices/ising_square_20x20_pbc.txt",
+  "mcs": 100000,
+  "kb": 1.0,
+  "seed": 42,
+  "temperature": {
+    "start": 1.5,
+    "final": 3.5,
+    "points": 20
+  },
+  "field": 0.0,
+  "out": "benchmarks/results/b2_ising_square.h5"
+}

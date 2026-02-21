@@ -1,0 +1,9 @@
+{
+  "sample": "benchmarks/lattices/heisenberg_chain_100.txt",
+  "mcs": 100000,
+  "kb": 1.0,
+  "seed": 42,
+  "temperature": 1000.0,
+  "field": 0.0,
+  "out": "benchmarks/results/b6_heisenberg_highT.h5"
+}

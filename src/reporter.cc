@@ -2,6 +2,7 @@
 #include "../include/exception.h"
 
 #include <array>
+#include <iostream>
 
 Reporter::Reporter()
 {
@@ -59,21 +60,53 @@ void Reporter::createMagnetizationDatasets(Lattice& lattice, Index numTemps, Ind
     {
         this->mags_dset_x_.at(type.second) = H5Dcreate(file, (type.first + "_x").c_str(),
                     H5T_IEEE_F64LE, space_mag, H5P_DEFAULT, dcpl, H5P_DEFAULT);
+        if (this->mags_dset_x_.at(type.second) < 0) {
+            H5Sclose(space_mag);
+            throw vegas::HDF5Exception("Failed to create dataset: " + type.first + "_x");
+        }
+        
         this->mags_dset_y_.at(type.second) = H5Dcreate(file, (type.first + "_y").c_str(),
                     H5T_IEEE_F64LE, space_mag, H5P_DEFAULT, dcpl, H5P_DEFAULT);
+        if (this->mags_dset_y_.at(type.second) < 0) {
+            H5Sclose(space_mag);
+            throw vegas::HDF5Exception("Failed to create dataset: " + type.first + "_y");
+        }
+        
         this->mags_dset_z_.at(type.second) = H5Dcreate(file, (type.first + "_z").c_str(),
                     H5T_IEEE_F64LE, space_mag, H5P_DEFAULT, dcpl, H5P_DEFAULT);
+        if (this->mags_dset_z_.at(type.second) < 0) {
+            H5Sclose(space_mag);
+            throw vegas::HDF5Exception("Failed to create dataset: " + type.first + "_z");
+        }
     }
 
     this->mags_dset_x_.at(num_types) = H5Dcreate(file, "magnetization_x",
                 H5T_IEEE_F64LE, space_mag, H5P_DEFAULT, dcpl, H5P_DEFAULT);
+    if (this->mags_dset_x_.at(num_types) < 0) {
+        H5Sclose(space_mag);
+        throw vegas::HDF5Exception("Failed to create dataset: magnetization_x");
+    }
+    
     this->mags_dset_y_.at(num_types) = H5Dcreate(file, "magnetization_y",
                 H5T_IEEE_F64LE, space_mag, H5P_DEFAULT, dcpl, H5P_DEFAULT);
+    if (this->mags_dset_y_.at(num_types) < 0) {
+        H5Sclose(space_mag);
+        throw vegas::HDF5Exception("Failed to create dataset: magnetization_y");
+    }
+    
     this->mags_dset_z_.at(num_types) = H5Dcreate(file, "magnetization_z",
                 H5T_IEEE_F64LE, space_mag, H5P_DEFAULT, dcpl, H5P_DEFAULT);
+    if (this->mags_dset_z_.at(num_types) < 0) {
+        H5Sclose(space_mag);
+        throw vegas::HDF5Exception("Failed to create dataset: magnetization_z");
+    }
 
     this->energies_dset = H5Dcreate(file, "energy",
                 H5T_IEEE_F64LE, space_mag, H5P_DEFAULT, dcpl, H5P_DEFAULT);
+    if (this->energies_dset < 0) {
+        H5Sclose(space_mag);
+        throw vegas::HDF5Exception("Failed to create dataset: energy");
+    }
 
     this->status = H5Sclose(space_mag);
 }
@@ -159,8 +192,20 @@ void Reporter::setupHyperslabs(Index mcs, Index numTemps, Index numAtoms)
     
     this->dims_select_[0] = mcs;
     this->memspace_id_ = H5Screate_simple(1, this->dims_select_, NULL);
+    
+    if (this->memspace_id_ < 0) {
+        throw vegas::HDF5Exception("Failed to create memory dataspace");
+    }
 
     this->dataspace_id_energy = H5Dget_space(this->energies_dset);
+    
+    if (this->dataspace_id_energy < 0) {
+        throw vegas::HDF5Exception("Failed to get energy dataspace");
+    }
+    
+    if (this->energies_dset < 0) {
+        throw vegas::HDF5Exception("Energy dataset ID is invalid");
+    }
 
     this->start_[1] = 0;
     this->count_[0] = 1;
@@ -175,18 +220,36 @@ void Reporter::setupHyperslabs(Index mcs, Index numTemps, Index numAtoms)
     {
         if (mags_dset_x_.at(idx) >= 0) {
             this->dataspace_id_mag_x_.at(idx) = H5Dget_space(mags_dset_x_.at(idx));
+            if (this->dataspace_id_mag_x_.at(idx) < 0) {
+                throw vegas::HDF5Exception("Failed to get mag_x dataspace for type " + std::to_string(idx));
+            }
         }
         if (mags_dset_y_.at(idx) >= 0) {
             this->dataspace_id_mag_y_.at(idx) = H5Dget_space(mags_dset_y_.at(idx));
+            if (this->dataspace_id_mag_y_.at(idx) < 0) {
+                throw vegas::HDF5Exception("Failed to get mag_y dataspace for type " + std::to_string(idx));
+            }
         }
         if (mags_dset_z_.at(idx) >= 0) {
             this->dataspace_id_mag_z_.at(idx) = H5Dget_space(mags_dset_z_.at(idx));
+            if (this->dataspace_id_mag_z_.at(idx) < 0) {
+                throw vegas::HDF5Exception("Failed to get mag_z dataspace for type " + std::to_string(idx));
+            }
         }
     }
 
     this->dims_select_finalstates[0] = 3;
     this->memspace_id_finalstates = H5Screate_simple(1, this->dims_select_finalstates, NULL);
+    
+    if (this->memspace_id_finalstates < 0) {
+        throw vegas::HDF5Exception("Failed to create finalstates memory dataspace");
+    }
+    
     this->dataspace_id_finalstates = H5Dget_space(this->finalstates_dset);
+    
+    if (this->dataspace_id_finalstates < 0) {
+        throw vegas::HDF5Exception("Failed to get finalstates dataspace");
+    }
 
     this->start_finalstates[2] = 0;
     this->count_finalstates[0] = 1;
@@ -271,28 +334,62 @@ void Reporter::partial_report(
 {
     this->start_[0] = index;
 
-    this->status = H5Sselect_hyperslab(this->dataspace_id_energy, H5S_SELECT_SET, this->start_,
+    herr_t status = H5Sselect_hyperslab(this->dataspace_id_energy, H5S_SELECT_SET, this->start_,
                                   this->stride_, this->count_, this->block_);
-    this->status = H5Dwrite(this->energies_dset, H5T_NATIVE_DOUBLE, this->memspace_id_,
+    if (status < 0) {
+        throw vegas::HDF5Exception("Failed to select hyperslab for energy dataset");
+    }
+    
+    status = H5Dwrite(this->energies_dset, H5T_NATIVE_DOUBLE, this->memspace_id_,
                        this->dataspace_id_energy, H5P_DEFAULT, enes.data());
+    if (status < 0) {
+        throw vegas::HDF5Exception("Failed to write energy data");
+    }
 
     Index i = 0;
     for (auto& val : this->mags_dset_x_)
     {
-        this->status = H5Sselect_hyperslab(this->dataspace_id_mag_x_.at(i), H5S_SELECT_SET, this->start_,
-                                      this->stride_, this->count_, this->block_);
-        this->status = H5Dwrite(val, H5T_NATIVE_DOUBLE, this->memspace_id_,
-                                   this->dataspace_id_mag_x_.at(i), H5P_DEFAULT, histMag_x.at(i).data());
-
-        this->status = H5Sselect_hyperslab(this->dataspace_id_mag_y_.at(i), H5S_SELECT_SET, this->start_,
-                                      this->stride_, this->count_, this->block_);
-        this->status = H5Dwrite(mags_dset_y_.at(i), H5T_NATIVE_DOUBLE, this->memspace_id_,
-                                   this->dataspace_id_mag_y_.at(i), H5P_DEFAULT, histMag_y.at(i).data());
-
-        this->status = H5Sselect_hyperslab(this->dataspace_id_mag_z_.at(i), H5S_SELECT_SET, this->start_,
-                                      this->stride_, this->count_, this->block_);
-        this->status = H5Dwrite(mags_dset_z_.at(i), H5T_NATIVE_DOUBLE, this->memspace_id_,
-                                   this->dataspace_id_mag_z_.at(i), H5P_DEFAULT, histMag_z.at(i).data());
+        if (val >= 0 && this->dataspace_id_mag_x_.at(i) >= 0) {
+            status = H5Sselect_hyperslab(this->dataspace_id_mag_x_.at(i), H5S_SELECT_SET, this->start_,
+                                          this->stride_, this->count_, this->block_);
+            if (status < 0) {
+                throw vegas::HDF5Exception("Failed to select hyperslab for mag_x dataset " + std::to_string(i));
+            }
+            
+            status = H5Dwrite(val, H5T_NATIVE_DOUBLE, this->memspace_id_,
+                                       this->dataspace_id_mag_x_.at(i), H5P_DEFAULT, histMag_x.at(i).data());
+            if (status < 0) {
+                throw vegas::HDF5Exception("Failed to write mag_x data for type " + std::to_string(i));
+            }
+        }
+        
+        if (mags_dset_y_.at(i) >= 0 && this->dataspace_id_mag_y_.at(i) >= 0) {
+            status = H5Sselect_hyperslab(this->dataspace_id_mag_y_.at(i), H5S_SELECT_SET, this->start_,
+                                          this->stride_, this->count_, this->block_);
+            if (status < 0) {
+                throw vegas::HDF5Exception("Failed to select hyperslab for mag_y dataset " + std::to_string(i));
+            }
+            
+            status = H5Dwrite(mags_dset_y_.at(i), H5T_NATIVE_DOUBLE, this->memspace_id_,
+                                       this->dataspace_id_mag_y_.at(i), H5P_DEFAULT, histMag_y.at(i).data());
+            if (status < 0) {
+                throw vegas::HDF5Exception("Failed to write mag_y data for type " + std::to_string(i));
+            }
+        }
+        
+        if (mags_dset_z_.at(i) >= 0 && this->dataspace_id_mag_z_.at(i) >= 0) {
+            status = H5Sselect_hyperslab(this->dataspace_id_mag_z_.at(i), H5S_SELECT_SET, this->start_,
+                                          this->stride_, this->count_, this->block_);
+            if (status < 0) {
+                throw vegas::HDF5Exception("Failed to select hyperslab for mag_z dataset " + std::to_string(i));
+            }
+            
+            status = H5Dwrite(mags_dset_z_.at(i), H5T_NATIVE_DOUBLE, this->memspace_id_,
+                                       this->dataspace_id_mag_z_.at(i), H5P_DEFAULT, histMag_z.at(i).data());
+            if (status < 0) {
+                throw vegas::HDF5Exception("Failed to write mag_z data for type " + std::to_string(i));
+            }
+        }
         i++;
     }
 
@@ -304,10 +401,17 @@ void Reporter::partial_report(
         std::vector<double> spin;
         spin.assign(std::begin(atom.getSpin()), std::end(atom.getSpin()));
 
-        this->status = H5Sselect_hyperslab(this->dataspace_id_finalstates, H5S_SELECT_SET, this->start_finalstates,
+        status = H5Sselect_hyperslab(this->dataspace_id_finalstates, H5S_SELECT_SET, this->start_finalstates,
                                              this->stride_finalstates, this->count_finalstates, this->block_finalstates);
-        this->status = H5Dwrite(this->finalstates_dset, H5T_NATIVE_DOUBLE, this->memspace_id_finalstates,
+        if (status < 0) {
+            throw vegas::HDF5Exception("Failed to select hyperslab for finalstates dataset");
+        }
+        
+        status = H5Dwrite(this->finalstates_dset, H5T_NATIVE_DOUBLE, this->memspace_id_finalstates,
                                    this->dataspace_id_finalstates, H5P_DEFAULT, spin.data());
+        if (status < 0) {
+            throw vegas::HDF5Exception("Failed to write finalstates data");
+        }
 
         i++;
     }
@@ -401,6 +505,122 @@ void Reporter::close()
     }
 
     this->closed_ = true;
+}
+
+Reporter::Reporter(Reporter&& other) noexcept
+{
+    // Transfer all handles from other
+    this->file = other.file;
+    this->dataspace_id_energy = other.dataspace_id_energy;
+    this->memspace_id_ = other.memspace_id_;
+    this->status = other.status;
+    this->mags_dset_x_ = std::move(other.mags_dset_x_);
+    this->dataspace_id_mag_x_ = std::move(other.dataspace_id_mag_x_);
+    this->mags_dset_y_ = std::move(other.mags_dset_y_);
+    this->dataspace_id_mag_y_ = std::move(other.dataspace_id_mag_y_);
+    this->mags_dset_z_ = std::move(other.mags_dset_z_);
+    this->dataspace_id_mag_z_ = std::move(other.dataspace_id_mag_z_);
+    this->energies_dset = other.energies_dset;
+    this->temps_dset = other.temps_dset;
+    this->fields_dset = other.fields_dset;
+    this->position_dset = other.position_dset;
+    this->types_dset = other.types_dset;
+    this->finalstates_dset = other.finalstates_dset;
+    this->memspace_id_finalstates = other.memspace_id_finalstates;
+    this->dataspace_id_finalstates = other.dataspace_id_finalstates;
+    this->closed_ = other.closed_;
+    
+    // Copy arrays
+    for (int i = 0; i < 2; ++i) {
+        this->count_[i] = other.count_[i];
+        this->start_[i] = other.start_[i];
+        this->stride_[i] = other.stride_[i];
+        this->block_[i] = other.block_[i];
+    }
+    this->dims_select_[0] = other.dims_select_[0];
+    
+    for (int i = 0; i < 3; ++i) {
+        this->count_finalstates[i] = other.count_finalstates[i];
+        this->start_finalstates[i] = other.start_finalstates[i];
+        this->stride_finalstates[i] = other.stride_finalstates[i];
+        this->block_finalstates[i] = other.block_finalstates[i];
+    }
+    this->dims_select_finalstates[0] = other.dims_select_finalstates[0];
+    
+    // Invalidate other's handles to prevent double-close
+    other.file = -1;
+    other.dataspace_id_energy = -1;
+    other.memspace_id_ = -1;
+    other.energies_dset = -1;
+    other.temps_dset = -1;
+    other.fields_dset = -1;
+    other.position_dset = -1;
+    other.types_dset = -1;
+    other.finalstates_dset = -1;
+    other.memspace_id_finalstates = -1;
+    other.dataspace_id_finalstates = -1;
+    other.closed_ = true;
+}
+
+Reporter& Reporter::operator=(Reporter&& other) noexcept
+{
+    if (this != &other) {
+        // Close our current handles
+        this->close();
+        
+        // Transfer all handles from other
+        this->file = other.file;
+        this->dataspace_id_energy = other.dataspace_id_energy;
+        this->memspace_id_ = other.memspace_id_;
+        this->status = other.status;
+        this->mags_dset_x_ = std::move(other.mags_dset_x_);
+        this->dataspace_id_mag_x_ = std::move(other.dataspace_id_mag_x_);
+        this->mags_dset_y_ = std::move(other.mags_dset_y_);
+        this->dataspace_id_mag_y_ = std::move(other.dataspace_id_mag_y_);
+        this->mags_dset_z_ = std::move(other.mags_dset_z_);
+        this->dataspace_id_mag_z_ = std::move(other.dataspace_id_mag_z_);
+        this->energies_dset = other.energies_dset;
+        this->temps_dset = other.temps_dset;
+        this->fields_dset = other.fields_dset;
+        this->position_dset = other.position_dset;
+        this->types_dset = other.types_dset;
+        this->finalstates_dset = other.finalstates_dset;
+        this->memspace_id_finalstates = other.memspace_id_finalstates;
+        this->dataspace_id_finalstates = other.dataspace_id_finalstates;
+        this->closed_ = other.closed_;
+        
+        // Copy arrays
+        for (int i = 0; i < 2; ++i) {
+            this->count_[i] = other.count_[i];
+            this->start_[i] = other.start_[i];
+            this->stride_[i] = other.stride_[i];
+            this->block_[i] = other.block_[i];
+        }
+        this->dims_select_[0] = other.dims_select_[0];
+        
+        for (int i = 0; i < 3; ++i) {
+            this->count_finalstates[i] = other.count_finalstates[i];
+            this->start_finalstates[i] = other.start_finalstates[i];
+            this->stride_finalstates[i] = other.stride_finalstates[i];
+            this->block_finalstates[i] = other.block_finalstates[i];
+        }
+        this->dims_select_finalstates[0] = other.dims_select_finalstates[0];
+        
+        // Invalidate other's handles to prevent double-close
+        other.file = -1;
+        other.dataspace_id_energy = -1;
+        other.memspace_id_ = -1;
+        other.energies_dset = -1;
+        other.temps_dset = -1;
+        other.fields_dset = -1;
+        other.position_dset = -1;
+        other.types_dset = -1;
+        other.finalstates_dset = -1;
+        other.memspace_id_finalstates = -1;
+        other.dataspace_id_finalstates = -1;
+        other.closed_ = true;
+    }
+    return *this;
 }
 
 Reporter::~Reporter()

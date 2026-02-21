@@ -1,0 +1,13 @@
+{
+  "sample": "benchmarks/lattices/ferromagnet_square_20x20_pbc.txt",
+  "mcs": 20000,
+  "kb": 1.0,
+  "seed": 42,
+  "temperature": {
+    "start": 0.001,
+    "final": 0.1,
+    "points": 5
+  },
+  "field": 0.0,
+  "out": "benchmarks/results/b3_ferromagnet.h5"
+}

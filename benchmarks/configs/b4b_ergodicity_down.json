@@ -1,0 +1,10 @@
+{
+  "sample": "benchmarks/lattices/ferromagnet_square_20x20_pbc.txt",
+  "mcs": 50000,
+  "kb": 1.0,
+  "seed": 42,
+  "initialstate": "benchmarks/lattices/all_spins_down.txt",
+  "temperature": 5.0,
+  "field": 0.0,
+  "out": "benchmarks/results/b4b_ergodicity_down.h5"
+}

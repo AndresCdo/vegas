@@ -21,6 +21,14 @@ public:
              Index mcs,
              Index seed,
              Real kb);
+    
+    // Delete copy operations to prevent double-close of HDF5 handles
+    Reporter(const Reporter&) = delete;
+    Reporter& operator=(const Reporter&) = delete;
+    
+    // Move operations to transfer ownership of HDF5 handles
+    Reporter(Reporter&& other) noexcept;
+    Reporter& operator=(Reporter&& other) noexcept;
 
     void partial_report(
         const std::vector<Real>& enes,

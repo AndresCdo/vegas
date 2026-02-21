@@ -1,0 +1,111 @@
+============================================================
+VEGAS v2.3.0 Physical Validation Benchmark Suite
+============================================================
+Running: benchmarks/configs/b1_ising_chain.json
+
+=== BENCHMARK B1: 1D Ising Chain ===
+     T |     e_sim |   e_exact | rel_err | Status
+--------------------------------------------------
+ 0.500 |   -0.9597 |   -0.9640 |   0.45% |   PASS
+ 1.000 |   -0.7537 |   -0.7616 |   1.03% |   PASS
+ 1.500 |   -0.5772 |   -0.5828 |   0.96% |   PASS
+ 2.000 |   -0.4565 |   -0.4621 |   1.22% |   PASS
+ 2.500 |   -0.3758 |   -0.3799 |   1.08% |   PASS
+ 3.000 |   -0.3188 |   -0.3215 |   0.84% |   PASS
+ 3.500 |   -0.2741 |   -0.2782 |   1.46% |   PASS
+ 4.000 |   -0.2408 |   -0.2449 |   1.67% |   PASS
+ 4.500 |   -0.2158 |   -0.2186 |   1.29% |   PASS
+ 5.000 |   -0.1960 |   -0.1974 |   0.71% |   PASS
+Running: benchmarks/configs/b2_ising_square.json
+
+=== BENCHMARK B2: 2D Ising Square Lattice ===
+Critical temperature (susceptibility peak): T_c = 3.500
+Critical temperature (specific heat peak):  T_c = 2.342
+Onsager exact T_c:                          T_c = 2.2692
+Deviation from exact: 1.231
+Low-T magnetization (T=1.5): |M|/N = 0.000 (expected > 0.7)
+High-T magnetization (T=3.5): |M|/N = 0.000 (expected < 0.3)
+Running: benchmarks/configs/b3_ferromagnet_ground.json
+
+=== BENCHMARK B3: Ferromagnetic Ground State ===
+Ground state energy: E_0 = -2.0000 per atom (expected: -2.00)
+Relative error: 0.00%
+Energy variance: 0.0000 (expected < 0.02)
+Saturation magnetization: |M|/N = 1.0000 (expected > 0.95)
+Running: benchmarks/configs/b4a_ergodicity_up.json
+Running: benchmarks/configs/b4b_ergodicity_down.json
+
+=== BENCHMARK B4: Ergodicity Test ===
+Simulation A (start up):   E = -0.4282 ± 0.0777,  M/N = 0.0010
+Simulation B (start down): E = -0.4282 ± 0.0777,  M/N = 0.0010
+ΔE = 0.0000, 3σ = 0.2330 => AGREE
+
+=== BENCHMARK B5: Sigma Freeze Verification ===
+WARNING: Could not extract sigma values from output
+Attempting to parse from last line with Fe...
+Found line: [0m[01;33mETR: 0:0:00[01;34m	(100.00000%)[0m	==>	T = 2.00000; H = 0.00000 Fe 0.00000 
+Running: benchmarks/configs/b6_heisenberg_highT.json
+
+=== BENCHMARK B6: Heisenberg Isotropy Test ===
+First moments:
+  <Mx>/N = 0.0006 (expected ~0, tol < 0.02)
+  <My>/N = 0.0002 (expected ~0, tol < 0.02)
+  <Mz>/N = -0.0003 (expected ~0, tol < 0.02)
+Second moments:
+  <Mx²>/N = 0.3345 (expected ~0.333, tol ±10%)
+  <My²>/N = 0.3337 (expected ~0.333, tol ±10%)
+  <Mz²>/N = 0.3357 (expected ~0.333, tol ±10%)
+
+============================================================
+# VEGAS v2.3.0 Physical Validation Report
+
+**Date**: 2026-02-20 21:37:06
+
+**Build**: Release
+
+**Seed**: 42 (all benchmarks)
+
+
+## Summary
+
+| Benchmark | Description | Status | Key Result |
+|-----------|-------------|--------|------------|
+| B1 | 1D Ising energy vs exact | PASS | e(T=1.0) = -0.7537 (exact: -0.7616) |
+| B2 | 2D Ising critical temp | FAIL | T_c = 3.50 (exact: 2.269, deviation: 1.231) |
+| B3 | Ferromagnet ground state | PASS | E_0 = -2.00 (exact: -2.00, rel_error: 0.0%) |
+| B4 | Ergodicity test | PASS | ΔE = 0.000 σ |
+| B5 | Sigma freeze verification | FAIL | Sigma change = NON-ZERO |
+| B6 | Heisenberg isotropy | PASS | <Mz>/N = -0.000 |
+
+## Overall Result: 2 FAILURES
+
+
+## Detailed Results
+
+See benchmark output above for detailed numerical values.
+
+
+## Failures
+
+
+### B2
+
+Status: FAIL
+
+Key result: T_c = 3.50 (exact: 2.269, deviation: 1.231)
+
+
+### B5
+
+Status: FAIL
+
+Key result: Sigma change = NON-ZERO
+
+
+## Conclusion
+
+2 benchmark(s) failed. See detailed results above for diagnosis.
+
+============================================================
+
+Report saved to: benchmarks/VALIDATION_REPORT.md
