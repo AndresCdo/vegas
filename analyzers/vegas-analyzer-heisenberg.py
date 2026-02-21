@@ -48,6 +48,7 @@ def main(file: str) -> None:
     with h5py.File(file, "r") as data:
         mcs = int(data.attrs["mcs"])
         seed = data.attrs["seed"]
+        kb = float(data.attrs.get("kb", 1.0))
         temps_full = data.get("temperature")[:]
         fields_full = data.get("field")[:]
         num_sites = len(data.get("positions"))
@@ -160,16 +161,26 @@ def main(file: str) -> None:
             [np.mean(energy[i][tau[i] :]) / num_sites for i, _ in enumerate(energy)]
         )
 
-        # Safe division - avoid division by zero
         temps_safe = np.where(temps_arr > 0, temps_arr, 1.0)
 
         susceptibility = np.array(
             [
-                np.std(
-                    np.linalg.norm([mags_x[i], mags_y[i], mags_z[i]], axis=0)[tau[i] :]
+                (
+                    np.mean(
+                        mags_x[i][tau[i] :] ** 2
+                        + mags_y[i][tau[i] :] ** 2
+                        + mags_z[i][tau[i] :] ** 2
+                    )
+                    - np.mean(
+                        np.sqrt(
+                            mags_x[i][tau[i] :] ** 2
+                            + mags_y[i][tau[i] :] ** 2
+                            + mags_z[i][tau[i] :] ** 2
+                        )
+                    )
+                    ** 2
                 )
-                ** 2
-                / temps_safe[i]
+                / (kb * temps_safe[i])
                 / num_sites
                 for i, _ in enumerate(mags_x)
             ]
@@ -178,18 +189,22 @@ def main(file: str) -> None:
         susceptibility_types: Dict[str, np.ndarray] = {
             t: np.array(
                 [
-                    np.std(
-                        np.linalg.norm(
-                            [
-                                mags_types_x[t][i],
-                                mags_types_y[t][i],
-                                mags_types_z[t][i],
-                            ],
-                            axis=0,
-                        )[tau[i] :]
+                    (
+                        np.mean(
+                            mags_types_x[t][i][tau[i] :] ** 2
+                            + mags_types_y[t][i][tau[i] :] ** 2
+                            + mags_types_z[t][i][tau[i] :] ** 2
+                        )
+                        - np.mean(
+                            np.sqrt(
+                                mags_types_x[t][i][tau[i] :] ** 2
+                                + mags_types_y[t][i][tau[i] :] ** 2
+                                + mags_types_z[t][i][tau[i] :] ** 2
+                            )
+                        )
+                        ** 2
                     )
-                    ** 2
-                    / temps_safe[i]
+                    / (kb * temps_safe[i])
                     / num_sites_types[t]
                     for i, _ in enumerate(mags_x)
                 ]
@@ -199,7 +214,7 @@ def main(file: str) -> None:
 
         specific_heat = np.array(
             [
-                np.std(energy[i][tau[i] :]) ** 2 / (temps_safe[i] ** 2) / num_sites
+                np.std(energy[i][tau[i] :]) ** 2 / (kb * temps_safe[i] ** 2) / num_sites
                 for i, _ in enumerate(energy)
             ]
         )

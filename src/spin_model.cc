@@ -5,6 +5,60 @@
 #include <cmath>
 #include <random>
 
+namespace {
+    Array cross(const Array& A, const Array& B)
+    {
+        return Array{A[1]*B[2] - A[2]*B[1], A[2]*B[0] - A[0]*B[2], A[0]*B[1] - A[1]*B[0]};
+    }
+    
+    Real dot(const Array& A, const Array& B)
+    {
+        return (A * B).sum();
+    }
+    
+    Real norm(const Array& A)
+    {
+        return std::sqrt((A * A).sum());
+    }
+    
+    Array rotateVectorToAlignWith(const Array& v, const Array& targetDirection)
+    {
+        Array zAxis = {0.0, 0.0, 1.0};
+        Real targetNorm = norm(targetDirection);
+        
+        if (targetNorm < EPSILON) {
+            return v;
+        }
+        
+        Array normalizedTarget = targetDirection / targetNorm;
+        Real cosAngle = dot(zAxis, normalizedTarget);
+        
+        if (std::abs(cosAngle - 1.0) < EPSILON) {
+            return v;
+        }
+        
+        if (std::abs(cosAngle + 1.0) < EPSILON) {
+            return -v;
+        }
+        
+        Array rotationAxis = cross(zAxis, normalizedTarget);
+        Real axisNorm = norm(rotationAxis);
+        
+        if (axisNorm < EPSILON) {
+            return v;
+        }
+        
+        rotationAxis = rotationAxis / axisNorm;
+        Real sinAngle = std::sqrt(1.0 - cosAngle * cosAngle);
+        
+        Array rotated = v * cosAngle + 
+                        cross(rotationAxis, v) * sinAngle + 
+                        rotationAxis * dot(rotationAxis, v) * (1.0 - cosAngle);
+        
+        return rotated;
+    }
+}
+
 // HeisenbergSpinModel implementation
 void HeisenbergSpinModel::initializeRandomState(
     std::mt19937_64& engine,
@@ -27,9 +81,25 @@ void HeisenbergSpinModel::randomizeSpin(
     Index num) const
 {
     atom.setOldSpin(atom.getSpin());
-    Array gamma({gaussianRandomGenerator(engine), gaussianRandomGenerator(engine), gaussianRandomGenerator(engine)});
-    Array unitArray = gamma / std::sqrt((gamma * gamma).sum());
-    atom.setSpin(atom.getSpinNorm() * unitArray);
+    Array currentSpin = atom.getSpin();
+    Real spinNorm = atom.getSpinNorm();
+    
+    Array perturbation({
+        sigma * gaussianRandomGenerator(engine),
+        sigma * gaussianRandomGenerator(engine),
+        sigma * gaussianRandomGenerator(engine)
+    });
+    
+    Array newSpin = currentSpin + perturbation;
+    Real newNorm = norm(newSpin);
+    
+    if (newNorm > EPSILON) {
+        atom.setSpin(spinNorm * newSpin / newNorm);
+    } else {
+        Array gamma({gaussianRandomGenerator(engine), gaussianRandomGenerator(engine), gaussianRandomGenerator(engine)});
+        Array unitArray = gamma / std::sqrt((gamma * gamma).sum());
+        atom.setSpin(spinNorm * unitArray);
+    }
 }
 
 // IsingSpinModel implementation
@@ -159,18 +229,21 @@ public:
         Index num) const override
     {
         atom.setOldSpin(atom.getSpin());
+        Array currentSpin = atom.getSpin();
+        Real spinNorm = atom.getSpinNorm();
         
-        // Cone move: random rotation within a cone
         Real theta = coneAngle_ * realRandomGenerator(engine);
         Real phi = 2.0 * M_PI * realRandomGenerator(engine);
         
-        Array newSpin = atom.getSpinNorm() * Array{
+        Array localPerturbation = Array{
             std::sin(theta) * std::cos(phi),
             std::sin(theta) * std::sin(phi),
             std::cos(theta)
         };
         
-        atom.setSpin(newSpin);
+        Array rotatedPerturbation = rotateVectorToAlignWith(localPerturbation, currentSpin);
+        
+        atom.setSpin(spinNorm * rotatedPerturbation);
     }
     
     std::string getName() const override { 
@@ -211,23 +284,23 @@ public:
         Index num) const override
     {
         atom.setOldSpin(atom.getSpin());
+        Array currentSpin = atom.getSpin();
+        Real spinNorm = atom.getSpinNorm();
         
-        // HN move: combination of cone and flip
         if (realRandomGenerator(engine) < 0.5) {
-            // Cone move
             Real theta = coneAngle_ * realRandomGenerator(engine);
             Real phi = 2.0 * M_PI * realRandomGenerator(engine);
             
-            Array newSpin = atom.getSpinNorm() * Array{
+            Array localPerturbation = Array{
                 std::sin(theta) * std::cos(phi),
                 std::sin(theta) * std::sin(phi),
                 std::cos(theta)
             };
             
-            atom.setSpin(newSpin);
+            Array rotatedPerturbation = rotateVectorToAlignWith(localPerturbation, currentSpin);
+            atom.setSpin(spinNorm * rotatedPerturbation);
         } else {
-            // Flip move
-            atom.setSpin(-atom.getSpin());
+            atom.setSpin(-currentSpin);
         }
     }
     

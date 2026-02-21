@@ -130,6 +130,56 @@ void test_default_values()
     std::cout << "PASS\n";
 }
 
+void test_validate_zero_temperature()
+{
+    std::cout << "Testing ConfigParser zero temperature validation... ";
+    
+    bool caught = false;
+    try {
+        vegas::ConfigParser::parse("test_system/zero_temp_config.json");
+    } catch (const vegas::InvalidInputException& e) {
+        caught = true;
+        std::string msg = e.what();
+        assert(msg.find("Temperature must be at least") != std::string::npos);
+    } catch (...) {
+        caught = true;
+    }
+    assert(caught);
+    
+    std::cout << "PASS\n";
+}
+
+void test_validate_negative_temperature()
+{
+    std::cout << "Testing ConfigParser negative temperature validation... ";
+    
+    bool caught = false;
+    try {
+        vegas::ConfigParser::parse("test_system/negative_temp_config.json");
+    } catch (const vegas::InvalidInputException& e) {
+        caught = true;
+        std::string msg = e.what();
+        assert(msg.find("Temperature must be at least") != std::string::npos);
+    } catch (...) {
+        caught = true;
+    }
+    assert(caught);
+    
+    std::cout << "PASS\n";
+}
+
+void test_validate_small_positive_temperature()
+{
+    std::cout << "Testing ConfigParser small positive temperature validation... ";
+    
+    vegas::SimulationConfig config = vegas::ConfigParser::parse("test_system/test_config.json");
+    
+    assert(config.temperatures.size() == 3);
+    assert(config.temperatures[0] >= MIN_TEMPERATURE);
+    
+    std::cout << "PASS\n";
+}
+
 int main()
 {
     std::cout << "Running ConfigParser tests for vegas...\n\n";
@@ -143,6 +193,9 @@ int main()
         test_validate_missing_file();
         test_validate_invalid_mcs();
         test_default_values();
+        test_validate_zero_temperature();
+        test_validate_negative_temperature();
+        test_validate_small_positive_temperature();
         
         std::cout << "\nAll ConfigParser tests passed!\n";
         return 0;

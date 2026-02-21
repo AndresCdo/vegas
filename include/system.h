@@ -41,6 +41,10 @@ public:
     void monteCarloStep_ising(Real T, Real H);
     
     void cycle();
+    
+    void adaptSigma();
+    
+    void resetSigma();
 
     Lattice& getLattice();
 
@@ -55,6 +59,9 @@ public:
 private:
     Lattice lattice_;
     Index mcs_;
+    Index thermalizationSteps_;
+    Index measurementSteps_;
+    Real thermalizationFraction_;
     Real kb_;
     Index seed_;
     std::vector<Real> temps_;

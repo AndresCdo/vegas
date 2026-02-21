@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
 #include "../include/rlutil.h"
 #include "../include/error.h"
 #include <functional>
@@ -82,6 +83,9 @@ System::System(std::string fileName,
                Real kb) : lattice_(fileName)
 {
     this -> mcs_ = mcs;
+    this -> thermalizationFraction_ = DEFAULT_THERMALIZATION_FRACTION;
+    this -> thermalizationSteps_ = static_cast<Index>(mcs * this -> thermalizationFraction_);
+    this -> measurementSteps_ = mcs - this -> thermalizationSteps_;
     this -> kb_ = kb;
     this -> temps_ = temps;
     this -> fields_ = fields;
@@ -113,7 +117,7 @@ System::System(std::string fileName,
                                  this -> lattice_,
                                  this -> temps_,
                                  this -> fields_,
-                                 this -> mcs_,
+                                 this -> measurementSteps_,
                                  this -> seed_,
                                  this -> kb_);
 }
@@ -127,6 +131,9 @@ System::~System()
 System::System(System&& other) noexcept
     : lattice_(std::move(other.lattice_)),
       mcs_(std::move(other.mcs_)),
+      thermalizationSteps_(std::move(other.thermalizationSteps_)),
+      measurementSteps_(std::move(other.measurementSteps_)),
+      thermalizationFraction_(std::move(other.thermalizationFraction_)),
       kb_(std::move(other.kb_)),
       seed_(std::move(other.seed_)),
       temps_(std::move(other.temps_)),
@@ -152,6 +159,9 @@ System& System::operator=(System&& other) noexcept
     if (this != &other) {
         lattice_ = std::move(other.lattice_);
         mcs_ = std::move(other.mcs_);
+        thermalizationSteps_ = std::move(other.thermalizationSteps_);
+        measurementSteps_ = std::move(other.measurementSteps_);
+        thermalizationFraction_ = std::move(other.thermalizationFraction_);
         kb_ = std::move(other.kb_);
         seed_ = std::move(other.seed_);
         temps_ = std::move(other.temps_);
@@ -210,6 +220,8 @@ Real System::totalEnergy(Real H)
         other_energy += atom.getAnisotropyEnergy(atom);
         other_energy += atom.getZeemanEnergy(H);
     }
+    // Apply 0.5 correction because bonds are stored bidirectionally
+    // (each bond counted twice: once for each direction)
     return 0.5 * exchange_energy + other_energy;
 }
 
@@ -278,48 +290,40 @@ void System::cycle()
             histMag_z.at(i).clear();
         }
 
-        Real rejection;
-        Real sigma_temp;
-        for (Index _ = 0; _ < this -> mcs_; ++_)
+        // Reset sigma at the start of each temperature/field point
+        this -> resetSigma();
+
+        // Phase 1: Thermalization (adapt sigma, no measurements)
+        for (Index _ = 0; _ < this -> thermalizationSteps_; ++_)
+        {
+            this -> monteCarloStep(T, H);
+            this -> adaptSigma();
+        }
+
+        // Phase 2: Measurement (fixed sigma, store observables)
+        for (Index _ = 0; _ < this -> measurementSteps_; ++_)
         {
             this -> monteCarloStep(T, H);
             enes.push_back(this -> totalEnergy(H));
             this -> ComputeMagnetization();
-            // auto mag = this -> magnetizationType_.at("magnetization");
-
 
             Index i = 0;
             for (auto& val : this -> counterRejections_)
             {
-                rejection = val / Real(this -> lattice_.getSizesByIndex().at(i));
-                // Avoid division by zero or very small rejection rates
-                if (rejection < MIN_REJECTION_RATE)
-                {
-                    sigma_temp = MAX_SIGMA; // Use maximum sigma when rejection rate is negligible
-                }
-                else
-                {
-                    sigma_temp = this -> sigma_.at(i) * (SIGMA_ADJUSTMENT_FACTOR / rejection);
-                    if (sigma_temp > MAX_SIGMA || sigma_temp < MIN_SIGMA)
-                    {
-                        sigma_temp = MAX_SIGMA;
-                    }
-                }
-                this -> sigma_.at(i) = sigma_temp;
-                this -> counterRejections_.at(i) = 0;
-
-
+                // Store magnetization for each type
                 histMag_x.at(i).push_back(this -> magnetizationByTypeIndex_.at(i)[0]);
                 histMag_y.at(i).push_back(this -> magnetizationByTypeIndex_.at(i)[1]);
                 histMag_z.at(i).push_back(this -> magnetizationByTypeIndex_.at(i)[2]);
+                
+                // Reset rejection counters (but don't adapt sigma during measurement!)
+                this -> counterRejections_.at(i) = 0;
                 i++;
             }
 
+            // Store total magnetization
             histMag_x.at(this -> num_types_).push_back(this -> magnetizationByTypeIndex_.at(this -> num_types_)[0]);
             histMag_y.at(this -> num_types_).push_back(this -> magnetizationByTypeIndex_.at(this -> num_types_)[1]);
             histMag_z.at(this -> num_types_).push_back(this -> magnetizationByTypeIndex_.at(this -> num_types_)[2]);
-
-
 
         }
         this -> reporter_.partial_report(enes, histMag_x, histMag_y, histMag_z, this -> lattice_, index);
@@ -352,6 +356,40 @@ void System::cycle()
 
     this -> reporter_.close();
 
+}
+
+void System::resetSigma()
+{
+    for (Index i = 0; i < this -> sigma_.size(); ++i)
+    {
+        this -> sigma_.at(i) = MAX_SIGMA;
+        this -> counterRejections_.at(i) = 0;
+    }
+}
+
+void System::adaptSigma()
+{
+    Real rejection;
+    Real sigma_temp;
+    
+    Index i = 0;
+    for (auto& val : this -> counterRejections_)
+    {
+        rejection = val / Real(this -> lattice_.getSizesByIndex().at(i));
+        // Avoid division by zero or very small rejection rates
+        if (rejection < MIN_REJECTION_RATE)
+        {
+            sigma_temp = MAX_SIGMA; // Use maximum sigma when rejection rate is negligible
+        }
+        else
+        {
+            sigma_temp = this -> sigma_.at(i) * (SIGMA_ADJUSTMENT_FACTOR / rejection);
+            sigma_temp = std::max(MIN_SIGMA, std::min(sigma_temp, MAX_SIGMA));
+        }
+        this -> sigma_.at(i) = sigma_temp;
+        this -> counterRejections_.at(i) = 0;
+        i++;
+    }
 }
 
 Lattice& System::getLattice()

@@ -20,6 +20,8 @@ const Real DEFAULT_TEMP_DELTA = 0.1;
 const Real DEFAULT_FIELD_START = 0.001;
 const Real DEFAULT_FIELD_FINAL = 10.0;
 const Real DEFAULT_FIELD_DELTA = 0.1;
+const Real MIN_TEMPERATURE = 1e-10;  // Minimum allowed temperature (must be > 0)
+const Real DEFAULT_THERMALIZATION_FRACTION = 0.2;  // Fraction of MCS used for thermalization
 
 // Spin model parameters
 const Index NUM_SPIN_MODELS = 5;

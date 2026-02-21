@@ -191,6 +191,16 @@ void ConfigParser::validate(const SimulationConfig& config) {
         throw vegas::InvalidInputException("MCS must be at least 10");
     }
     
+    // Check temperatures are positive (avoid division by zero in exp(-dE/kT))
+    for (size_t i = 0; i < config.temperatures.size(); ++i) {
+        if (config.temperatures[i] < MIN_TEMPERATURE) {
+            throw vegas::InvalidInputException(
+                "Temperature must be at least " + std::to_string(MIN_TEMPERATURE) + 
+                ", got " + std::to_string(config.temperatures[i]) + 
+                " at index " + std::to_string(i));
+        }
+    }
+    
     // Check temperature/field vector sizes match
     if (config.temperatures.size() != config.fields.size()) {
         throw vegas::ConfigurationException(

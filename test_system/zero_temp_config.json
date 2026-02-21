@@ -1,0 +1,8 @@
+{
+  "sample": "test_system/ferromagnetic_chain.txt",
+  "mcs": 100,
+  "kb": 1.0,
+  "temperature": 0.0,
+  "field": 0.0,
+  "out": "test_results.h5"
+}
