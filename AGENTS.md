@@ -37,6 +37,31 @@ VEGAS (VEctor General Atomistic Simulator) is a Monte Carlo simulation package f
 9. **Exception Hierarchy**: Implemented comprehensive exception classes, replaced all EXIT() calls with specific exceptions
 10. **CLI Enhancement**: Added professional command-line interface with subcommands (run, analyze, validate, info), verbosity control, colored output, configuration overrides, and backward compatibility
 
+#### **2026-02-20: Physical Validation Suite (v2.4.0)**
+
+**Critical Bugs Fixed:**
+1. **HDF5 Double-Close Bug**: Reporter class lacked move semantics - temporary objects destroyed HDF5 handles prematurely, causing zero data output. Fixed with proper move constructor/assignment.
+2. **Lattice Bond Storage Bug**: Bonds stored unidirectionally (i→j only), breaking detailed balance. Fixed by storing bonds bidirectionally (i→j AND j→i).
+
+**Physical Validation Suite:**
+- 6 comprehensive benchmarks comparing against exact solutions
+- B1: 1D Ising energy vs exact (1.7% error)
+- B2: 2D Ising Tc vs Onsager (deviation 0.138)
+- B3: Ferromagnet ground state (exact match)
+- B4: Ergodicity test (both branches converge)
+- B5: Sigma freeze verification (code inspected)
+- B6: Heisenberg isotropy (all moments within tolerance)
+
+**New Files:**
+- `benchmarks/` directory with configs, lattices, and results
+- `generate_lattices.py` - Lattice file generator with bidirectional bonds
+- `run_all_benchmarks.py` - Benchmark runner with automatic analysis
+- `VALIDATION_REPORT.md` - Comprehensive results
+
+**VEGAS Convention Documented:**
+- J > 0 = ferromagnetic (inverted from standard physics)
+- J < 0 = antiferromagnetic
+
 #### **2026-02-20: Code Quality Overhaul (v2.1.0)**
 
 **Critical Issues Fixed:**
@@ -66,14 +91,10 @@ VEGAS (VEctor General Atomistic Simulator) is a Monte Carlo simulation package f
 ### 🚨 **KNOWN ISSUES**
 
 #### **Build/Configuration:**
-1. **Conan Not Required**: Project now uses system packages by default
-2. **HDF5 Header**: Changed from `H5Include.h` to standard `hdf5.h`
-3. **JSON Headers**: Using system `json/json.h**
-4. **HDF5 Runtime Warnings**: Non-fatal HDF5 errors appear during simulation (dataspace/dataset ID validation). The validation pipeline passes, but further investigation needed.
+1. **Conan Not Required**: Project uses system packages by default
 
 #### **Code Quality (To Do):**
 1. **`Atom` Class**: Still large (~320 lines), could benefit from further refactoring
-2. **HDF5 Runtime Warnings**: Non-fatal HDF5 errors appear during tests (further investigation needed)
 
 ## Build Instructions
 
@@ -125,6 +146,9 @@ cmake --build build -j
 - SpinModel factory and concrete implementations
 - Atom-SpinModel integration
 - HDF5 output structure validation
+- Temperature validation (MIN_TEMPERATURE enforcement)
+- Thermalization phases (thermalization vs measurement)
+- Sigma adaptation timing
 
 ## Code Structure
 
@@ -137,17 +161,15 @@ cmake --build build -j
 - `include/starter.h` - JSON configuration parser
 - `include/spin_model.h` - Spin model abstraction
 
-### **Recent Changes:**
-1. **`params.h`**: Added `safe_stod` declarations and constants
-2. **`system.cc`**: Updated `randomizeSpin` call (fixed parameter count), added `safe_stod` overload
-3. **`starter.cc`**: Minor updates (already had security improvements)
-4. **`CMakeLists.txt`**: Added `spin_model.cc` and `test_integration.cc` to build targets
-5. **`include/atom.h`**: Added `SpinModel` pointer, move semantics, new public methods
-6. **`include/spin_model.h`**: Created (SpinModel base class and factory declaration)
-7. **`src/atom.cc`**: Implemented move constructors, updated `setModel` to use SpinModel factory, added new method implementations
-8. **`src/spin_model.cc`**: Created (implementations of all concrete SpinModels and factory function)
-9. **`src/lattice.cc`**: Fixed Atom assignment to use `std::move`
-10. **Documentation**: Added `WORKFLOW.md`, `validate.sh`, updated `README.md`, created test system
+### **Recent Changes (v2.3.0):**
+1. **`params.h`**: Added `MIN_TEMPERATURE`, `DEFAULT_THERMALIZATION_FRACTION` constants
+2. **`system.h`**: Added `thermalizationSteps_`, `measurementSteps_`, `thermalizationFraction_`, `adaptSigma()`, `resetSigma()`
+3. **`system.cc`**: Separated thermalization/measurement phases, sigma only adapts during thermalization
+4. **`spin_model.cc`**: Fixed Cone/HN detailed balance (Rodrigues rotation), Heisenberg uses sigma, added rotation helpers
+5. **`config_parser.cc`**: Added temperature validation, rejects T ≤ MIN_TEMPERATURE
+6. **`vegas-analyzer-heisenberg.py`**: Fixed susceptibility (χ = ⟨M²⟩-⟨M⟩²/kT) and Cv formulas
+7. **`test_config_parser.cc`**: Added T=0, T=-1.0 validation tests
+8. **New test configs**: `zero_temp_config.json`, `negative_temp_config.json`
 
 ## Development Guidelines
 
@@ -167,6 +189,44 @@ cmake --build build -j
 1. **Move Semantics**: Implement for large objects
 2. **Avoid Copies**: Pass by const reference when appropriate
 3. **Vectorization**: Use `std::valarray` operations where possible
+
+### **Scientific Correctness:**
+1. **Thermalization**: First 20% of MCS discarded by default (`DEFAULT_THERMALIZATION_FRACTION`)
+2. **Sigma Adaptation**: Only during thermalization, fixed during measurement
+3. **Temperature Validation**: Must be > `MIN_TEMPERATURE` (1e-10)
+4. **Detailed Balance**: All spin proposals must be symmetric around current spin
+5. **Thermodynamic Formulas**: Susceptibility and Cv must include kb factor
+
+## Scientific Validation
+
+### **Physical Correctness Guarantees**
+
+The following scientific correctness properties are verified:
+
+#### **Thermalization**
+- First 20% of MCS discarded by default (`DEFAULT_THERMALIZATION_FRACTION = 0.2`)
+- Thermalization implemented in C++ code, not post-processing
+- HDF5 output contains only measurement phase data
+
+#### **Detailed Balance**
+- Metropolis acceptance: p = min(1, exp(-ΔE/kT)) correctly implemented
+- All spin proposals are symmetric around current spin
+- Cone/HN models use Rodrigues rotation to center proposals
+
+#### **Sigma Adaptation**
+- Only adapts during thermalization phase
+- Fixed during measurement (preserves detailed balance)
+- Reset to MAX_SIGMA at each temperature/field point
+
+#### **Thermodynamic Formulas**
+- Susceptibility: χ = (⟨M²⟩ - ⟨M⟩²) / (kT) with kb factor
+- Specific Heat: Cv = σ²E / (kT²) with kb factor
+- Temperature validation: T > MIN_TEMPERATURE (1e-10)
+
+### **Testing**
+- Temperature validation: Tests for T=0 (rejected), T=-1.0 (rejected), T=0.001 (accepted)
+- HDF5 dimensions: Verified output is measurement_steps, not mcs
+- All spin models: Verified norm preservation and proposal symmetry
 
 ## Next Development Phases
 
@@ -291,6 +351,68 @@ sudo apt-get install \
 - **Tests**: `tests/` directory, `validate.sh` validation script
 
 ## Version History
+
+### **2026-02-20**: Physical Validation Suite (v2.4.0)
+
+**Critical Bugs Fixed:**
+1. **HDF5 Double-Close Bug**: Reporter class lacked move semantics - temporary objects destroyed HDF5 handles prematurely, causing zero data output. Fixed with proper move constructor/assignment operator.
+2. **Lattice Bond Storage Bug**: Bonds stored unidirectionally (i→j only), breaking detailed balance for Metropolis dynamics. Fixed by storing bonds bidirectionally (i→j AND j→i).
+
+**Physical Validation Suite:**
+- 6 comprehensive benchmarks comparing against exact solutions
+- B1: 1D Ising energy vs exact (1.7% relative error)
+- B2: 2D Ising Tc vs Onsager (deviation: 0.138 < 0.15)
+- B3: Ferromagnet ground state (exact match)
+- B4: Ergodicity test (both branches converge identically)
+- B5: Sigma freeze verification (code inspection confirmed)
+- B6: Heisenberg isotropy (all moments within tolerance)
+
+**New Infrastructure:**
+- `benchmarks/` directory with configs, lattices, and results
+- `generate_lattices.py` - Lattice file generator with bidirectional bonds
+- `run_all_benchmarks.py` - Benchmark runner with automatic analysis
+- `benchmarks/VALIDATION_REPORT.md` - Comprehensive validation results
+
+**VEGAS Convention Documented:**
+- J > 0 = ferromagnetic (inverted from standard physics convention)
+- J < 0 = antiferromagnetic
+
+**Files Changed:** 31 files (+7,519 lines)
+
+### **2026-02-20**: Scientific Correctness Overhaul (v2.3.0)
+
+**Critical Physics Fixes (P0):**
+1. **Temperature Validation**: Added `MIN_TEMPERATURE` constant (1e-10), ConfigParser rejects T ≤ MIN_TEMPERATURE with clear error message
+2. **Thermalization Implementation**: First 20% of MCS (`DEFAULT_THERMALIZATION_FRACTION`) properly discarded - measurements only stored from equilibrium phase
+3. **Sigma Adaptation Timing**: Sigma only adapts during thermalization phase, remains FIXED during measurement (preserves detailed balance)
+4. **Cone/HN Detailed Balance**: Fixed violation - proposals now centered on current spin direction using Rodrigues rotation formula
+5. **Heisenberg Sigma Usage**: Model now uses sigma parameter for Gaussian perturbation magnitude (previously ignored)
+
+**Analyzer Fixes (P1):**
+1. **Susceptibility Formula**: Corrected from std(|M|)²/T to χ = (⟨M²⟩ - ⟨M⟩²) / (kT) with proper kb factor
+2. **Specific Heat Formula**: Corrected to Cv = σ²E / (kT²) with proper kb factor
+
+**New Constants (`params.h`):**
+- `MIN_TEMPERATURE = 1e-10` - Minimum allowed temperature
+- `DEFAULT_THERMALIZATION_FRACTION = 0.2` - 20% thermalization by default
+
+**New System Class Members:**
+- `thermalizationSteps_` - Steps for equilibration
+- `measurementSteps_` - Steps for data collection (mcs - thermalization)
+- `thermalizationFraction_` - Configurable fraction
+- `adaptSigma()` - Adaptation method (only called during thermalization)
+- `resetSigma()` - Reset to MAX_SIGMA at each T/H point
+
+**Breaking Changes:**
+- ⚠️ **HDF5 output dimension change**: Arrays now store `[n_temps, measurement_steps]` instead of `[n_temps, mcs]`
+- Existing analyzers that assume full mcs length will need adjustment
+- Thermalization cutoff is now in C++ code, not post-processing
+
+**Files Changed:**
+- `include/params.h`, `include/system.h`
+- `src/system.cc`, `src/config_parser.cc`, `src/spin_model.cc`
+- `analyzers/vegas-analyzer-heisenberg.py`
+- `tests/test_config_parser.cc`, `test_system/zero_temp_config.json`, `test_system/negative_temp_config.json`
 
 ### **2026-02-20**: CLI Enhancements (v2.2.0)
 - Implemented `vegas validate` subcommand using ConfigParser with verbose output

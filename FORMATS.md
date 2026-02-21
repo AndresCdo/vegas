@@ -68,19 +68,22 @@ Where A and B are orthogonal vectors defining the cubic axes.
 The main output file contains:
 
 **Attributes:**
-- `mcs`: Number of Monte Carlo steps
+- `mcs`: Number of measurement steps (NOT total MCS - thermalization discarded in v2.3.0+)
 - `seed`: Random number generator seed
 - `kb`: Boltzmann constant
 
 **Datasets:**
 - `temperature`: 1D array of temperature values [n_temps]
-- `field`: 1D array of field values [n_fields]
-- `magnetization_x`: 3D array [n_temps, n_fields, mcs]
-- `magnetization_y`: 3D array [n_temps, n_fields, mcs]
-- `magnetization_z`: 3D array [n_temps, n_fields, mcs]
-- `energy`: 3D array [n_temps, n_fields, mcs]
+- `field`: 1D array of field values [n_temps]
+- `magnetization_x`: 2D array [n_temps, measurement_steps] (v2.3.0+)
+- `magnetization_y`: 2D array [n_temps, measurement_steps] (v2.3.0+)
+- `magnetization_z`: 2D array [n_temps, measurement_steps] (v2.3.0+)
+- `energy`: 2D array [n_temps, measurement_steps] (v2.3.0+)
 - `positions`: 2D array [n_atoms, 3] of atom positions
 - `types`: 1D array [n_atoms] of atom type indices
+- `finalstates`: 3D array [n_temps, n_atoms, 3] final spin configurations
+
+**Note**: Since v2.3.0, only measurement phase (80% of MCS) is stored. Thermalization data is discarded.
 
 ### Analysis Outputs
 

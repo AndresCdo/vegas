@@ -11,6 +11,7 @@ VEGAS (VEctor General Atomistic Simulator) is a software package for simulation,
 - **Analysis Tools**: Python scripts for data analysis and visualization
 - **Validation Pipeline**: Automated end-to-end testing with sample system
 - **Professional CLI**: Modern command-line interface with subcommands, verbosity control, and configuration options
+- **Scientifically Correct**: Proper thermalization, detailed balance, and validated thermodynamic formulas
 - **Parallelization**: Temperature and field point parallelism
 
 ## Installation
@@ -148,6 +149,39 @@ The following options can be used to override JSON configuration values when usi
 | `--sample FILE` | Sample file path | `"sample": "FILE"` |
 | `--initialstate FILE` | Initial state file | `"initialstate": "FILE"` |
 
+### ⚠️ Breaking Changes (v2.3.0)
+
+**HDF5 Output Dimension Change**
+
+Starting with v2.3.0, HDF5 arrays store only the **measurement phase** (80% of MCS by default), not the full MCS. This ensures equilibrium statistics but requires updating existing analysis scripts.
+
+**Before (v2.2.0):**
+```python
+# magnetization_z shape: [n_temps, mcs]  (e.g., [3, 100])
+```
+
+**After (v2.3.0):**
+```python
+# magnetization_z shape: [n_temps, measurement_steps]  (e.g., [3, 80])
+```
+
+**Migration Guide:**
+```python
+# Old code (v2.2.0)
+mcs = data.attrs['mcs']  # Was: 100
+tau = mcs // 5           # Was: 20
+
+# New code (v2.3.0)
+measurement_steps = data['energy'].shape[1]  # Now: 80
+tau = measurement_steps // 4  # Equivalent thermalization cutoff
+```
+
+The `mcs` attribute in HDF5 now stores `measurement_steps`. To get original MCS:
+```python
+measurement_steps = data.attrs['mcs']
+original_mcs = int(measurement_steps / 0.8)  # Divide by thermalization fraction
+```
+
 ### Input JSON Format
 
 VEGAS uses JSON configuration files. Here's a minimal example:
@@ -179,7 +213,7 @@ VEGAS uses JSON configuration files. Here's a minimal example:
 | | `mcs` | integer | 5000 | Monte Carlo steps |
 | | `kb` | float | 1.0 | Boltzmann constant |
 | | `out` | string | `sample.h5` | Output filename |
-| Temperature | `temperature` | object/float | 0.0 | Temperature settings |
+| Temperature | `temperature` | object/float | 0.0 | Temperature settings (must be > 1e-10) |
 | | `temperature.start` | float | 0.001 | Start temperature |
 | | `temperature.final` | float | 10.0 | Final temperature |
 | | `temperature.points` | integer | 5 | Number of points |
@@ -195,23 +229,26 @@ VEGAS uses JSON configuration files. Here's a minimal example:
 
 ### Output Format
 
-VEGAS outputs data in HDF5 format with the following structure:
+VEGAS outputs data in HDF5 format. **Note**: Only the measurement phase (80% of MCS) is stored; thermalization data is discarded.
 
 ```
 /output.h5
 ├── attributes
-│   ├── mcs: Monte Carlo steps
+│   ├── mcs: Measurement steps (NOT total MCS - thermalization discarded)
 │   ├── seed: Random seed
 │   └── kb: Boltzmann constant
 ├── datasets
 │   ├── temperature: Temperature values [n_temps]
-│   ├── field: Field values [n_fields]
-│   ├── magnetization_x: X magnetization [n_temps, n_fields, mcs]
-│   ├── magnetization_y: Y magnetization [n_temps, n_fields, mcs]
-│   ├── magnetization_z: Z magnetization [n_temps, n_fields, mcs]
-│   ├── energy: Total energy [n_temps, n_fields, mcs]
-│   └── positions: Atom positions [n_atoms, 3]
+│   ├── field: Field values [n_temps]
+│   ├── magnetization_x: X magnetization [n_temps, measurement_steps]
+│   ├── magnetization_y: Y magnetization [n_temps, measurement_steps]
+│   ├── magnetization_z: Z magnetization [n_temps, measurement_steps]
+│   ├── energy: Total energy [n_temps, measurement_steps]
+│   ├── positions: Atom positions [n_atoms, 3]
+│   └── finalstates: Final spin states [n_temps, n_atoms, 3]
 ```
+
+**Migration from v2.2.0:** See Breaking Changes section above.
 
 ### Analysis Tools
 
@@ -337,15 +374,26 @@ The system Hamiltonian includes:
 
 ### Monte Carlo Algorithm
 
+The simulation follows a two-phase approach:
+
 1. **Initialization**: Random or specified initial spin configuration
-2. **Metropolis Step**:
+
+2. **Thermalization Phase** (first 20% of MCS):
    - Select random atom
-   - Propose spin change
-   - Calculate energy difference ΔE
-   - Accept with probability \( p = \min(1, \exp(-ΔE/k_B T)) \)
-3. **Adaptive Step Size**: Sigma adjustment based on acceptance rate
-4. **Measurement**: Record magnetization and energy every N steps
-5. **Thermalization**: First 20% of steps discarded for equilibration
+   - Propose spin change (symmetric around current spin)
+   - Calculate energy difference ΔE = E_new - E_old
+   - Accept with probability p = min(1, exp(-ΔE/k_B T))
+   - **Adapt sigma** based on acceptance rate (target ~50%)
+   - Data NOT stored
+
+3. **Measurement Phase** (remaining 80% of MCS):
+   - Same Metropolis steps
+   - **Sigma is FIXED** (no adaptation - preserves detailed balance)
+   - Record magnetization and energy to HDF5
+
+4. **Output**: HDF5 contains only measurement phase data
+
+This approach ensures proper equilibrium sampling with fixed transition probabilities.
 
 ## Performance
 
@@ -362,6 +410,65 @@ Typical performance on a modern CPU:
 - 10,000 atoms: ~100,000 steps/second
 - 100,000 atoms: ~10,000 steps/second
 - Memory usage: ~100 MB per million atoms
+
+## Scientific Validation
+
+### Physical Correctness
+
+VEGAS v2.3.0 implements the following scientific correctness guarantees:
+
+#### Thermalization
+- **20% default cutoff** (`DEFAULT_THERMALIZATION_FRACTION`)
+- Implemented in simulation, not post-processing
+- Only equilibrium data stored
+
+#### Detailed Balance
+- Symmetric spin proposals for all models
+- Cone/HN: Rodrigues rotation centers proposals on current spin
+- Metropolis: p = min(1, exp(-ΔE/kT))
+
+#### Sigma Adaptation
+- **Thermalization only**: Adapts during equilibration
+- **Fixed during measurement**: Preserves detailed balance
+- Reset at each T/H point
+
+#### Thermodynamic Formulas
+- **Susceptibility**: χ = (⟨M²⟩ - ⟨M⟩²) / (k_B T)
+- **Specific Heat**: C_V = (⟨E²⟩ - ⟨E⟩²) / (k_B T²)
+- **Temperature**: Validated T > 10⁻¹⁰
+
+### Validation Tests
+```bash
+# Run validation pipeline
+./validate.sh
+
+# Run unit tests
+./build/vegas_simple_tests
+./build/vegas_config_parser_tests  # Includes T=0, T=-1.0 validation
+```
+
+### Physical Validation Benchmarks
+
+VEGAS v2.4.0 includes a comprehensive validation suite comparing simulations against exact solutions:
+
+```bash
+# Run all benchmarks
+python run_all_benchmarks.py
+
+# Results are stored in benchmarks/results/
+# See benchmarks/VALIDATION_REPORT.md for full analysis
+```
+
+| Benchmark | Description | Result |
+|-----------|-------------|--------|
+| B1 | 1D Ising energy vs exact | 1.7% error (PASS) |
+| B2 | 2D Ising Tc vs Onsager | deviation 0.138 (PASS) |
+| B3 | Ferromagnet ground state | exact match (PASS) |
+| B4 | Ergodicity test | branches converge (PASS) |
+| B5 | Sigma freeze | code verified (PASS) |
+| B6 | Heisenberg isotropy | moments correct (PASS) |
+
+See [benchmarks/VALIDATION_REPORT.md](benchmarks/VALIDATION_REPORT.md) for detailed results.
 
 ## Contributing
 

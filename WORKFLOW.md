@@ -142,6 +142,25 @@ cd ../test_system
 
 All steps should complete without errors. The HDF5 file should contain non-zero magnetization values indicating proper simulation.
 
+## Physical Validation Benchmarks
+
+For comprehensive validation against exact solutions, run the benchmark suite:
+
+```bash
+# From project root
+python run_all_benchmarks.py
+
+# This runs 6 benchmarks:
+# - B1: 1D Ising energy vs exact solution
+# - B2: 2D Ising critical temperature vs Onsager
+# - B3: Ferromagnet ground state energy
+# - B4: Ergodicity test
+# - B5: Sigma freeze verification
+# - B6: Heisenberg high-temperature isotropy
+
+# Results in benchmarks/VALIDATION_REPORT.md
+```
+
 ## Next Steps
 
 - **Performance Optimization**: Profile simulation with larger systems
@@ -151,4 +170,4 @@ All steps should complete without errors. The HDF5 file should contain non-zero 
 
 ---
 
-*Last updated: February 2025*
+*Last updated: February 2026*
