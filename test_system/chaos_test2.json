@@ -1,0 +1,6 @@
+{
+  "sample": "test_system/ferromagnetic_chain.txt",
+  "mcs": 100,
+  "temperature": 1.0
+  # missing "out" field
+}

@@ -1,0 +1,6 @@
+{
+  "sample": "nonexistent_file.txt",
+  "mcs": 100,
+  "temperature": 1.0,
+  "out": "test_output.h5"
+}
