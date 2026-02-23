@@ -1,5 +1,5 @@
 {
-  "sample": "benchmarks/lattices/ferromagnet_square_20x20_pbc.txt",
+  "sample": "benchmarks/lattices/ising_square_20x20.txt",
   "mcs": 50000,
   "kb": 1.0,
   "seed": 42,

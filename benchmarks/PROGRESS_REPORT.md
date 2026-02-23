@@ -72,16 +72,16 @@ Second moments match expected 1/3 within tolerance.
 
 ## VEGAS Exchange Convention
 
-**IMPORTANT FINDING**: VEGAS uses INVERTED exchange convention:
+**CORRECTED**: VEGAS uses standard physics convention:
 
 ```
 E = -J * (S_i · S_j)
 
-Standard physics:   J > 0 = antiferromagnetic
-VEGAS convention:   J > 0 = ferromagnetic
+Standard physics:   J > 0 = ferromagnetic
+VEGAS convention:   J > 0 = ferromagnetic  (same as standard)
 ```
 
-**Action Taken**: Updated lattice files with corrected J signs.
+**Note**: Earlier versions of this report incorrectly stated VEGAS had an "inverted" convention. This was a documentation error - the code implements the standard physics convention.
 
 ## Next Steps
 

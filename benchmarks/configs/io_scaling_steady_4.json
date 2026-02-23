@@ -1,9 +1,9 @@
 {
   "sample": "benchmarks/lattices/simple_10x10.txt",
-  "mcs": 100000,
+  "mcs": 500000,
   "kb": 1.0,
   "seed": 42,
-  "temperature": 1000.0,
+  "temperature": 2.0,
   "field": 0.0,
-  "out": "benchmarks/results/b6_heisenberg_highT.h5"
+  "out": "benchmarks/results/io_scaling_steady_4.h5"
 }

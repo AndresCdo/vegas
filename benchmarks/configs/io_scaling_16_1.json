@@ -2,8 +2,8 @@
   "sample": "benchmarks/lattices/simple_10x10.txt",
   "mcs": 10000,
   "kb": 1.0,
-  "seed": 42,
+  "seed": 31,
   "temperature": 2.0,
   "field": 0.0,
-  "out": "benchmarks/results/b5_sigma_freeze.h5"
+  "out": "benchmarks/results/io_scaling_16_1.h5"
 }

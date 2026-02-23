@@ -48,19 +48,16 @@ def write_lattice(path, atoms, interactions, type_names):
 
 def make_ising_chain_100(out_dir):
     """
-    1D open chain, 100 atoms, nearest-neighbour exchange J = -1.0.
+    1D open chain, 100 atoms, nearest-neighbour exchange J = 1.0.
     Open boundaries (no wrap): 198 interactions (bidirectional).
 
-    NOTE: VEGAS uses INVERTED convention from standard physics:
+    Exchange convention (standard physics): E = -J * S_i · S_j
     - J > 0: Ferromagnetic (favors alignment)
     - J < 0: Antiferromagnetic (favors anti-alignment)
-
-    For antiferromagnetic behavior (standard J > 0), use J = -1 in VEGAS.
-
-    CRITICAL: Each bond must be stored for BOTH atoms for proper Metropolis dynamics!
     """
+
     N = 100
-    J = -1.0  # Inverted: this gives antiferromagnetic behavior in VEGAS
+    J = 1.0  # Ferromagnetic coupling
 
     atoms = [
         {
@@ -141,18 +138,19 @@ def make_ising_square_20x20_pbc(out_dir):
 
 def make_ferromagnet_square_20x20_pbc(out_dir):
     """
-    Same geometry as B2 but with J = +1.0 (ferromagnetic in VEGAS convention).
+    Same geometry as B2 but with J = +1.0 (ferromagnetic coupling).
 
     Ground state energy per atom:
         e_0 = -|J| * z / 2 = -1.0 * 4 / 2 = -2.0  (z=4 for square lattice)
 
-    NOTE: VEGAS uses INVERTED convention:
-    - J = +1 gives ferromagnetic behavior (standard physics J < 0)
+    Exchange convention (standard physics): E = -J * S_i · S_j
+    - J > 0: Ferromagnetic (favors alignment)
+    - J < 0: Antiferromagnetic (favors anti-alignment)
 
     CRITICAL: Each bond must be stored for BOTH atoms for proper Metropolis dynamics!
     """
     L = 20
-    J = 1.0  # Ferromagnetic in VEGAS convention
+    J = 1.0  # Ferromagnetic coupling
 
     def idx(i, j):
         return i * L + j

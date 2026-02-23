@@ -1,5 +1,5 @@
 {
-  "sample": "test_system/ferromagnetic_chain.txt",
+  "sample": "ferromagnetic_chain.txt",
   "mcs": 100,
   "kb": 1.0,
   "seed": 12345,
@@ -14,5 +14,5 @@
     "points": 3
   },
   "out": "test_results.h5",
-  "initialstate": "test_system/initial_spins.txt"
+  "initialstate": "initial_spins.txt"
 }
