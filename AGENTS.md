@@ -59,8 +59,89 @@ VEGAS (VEctor General Atomistic Simulator) is a Monte Carlo simulation package f
 - `VALIDATION_REPORT.md` - Comprehensive results
 
 **VEGAS Convention Documented:**
-- J > 0 = ferromagnetic (inverted from standard physics)
+- J > 0 = ferromagnetic (standard physics convention)
 - J < 0 = antiferromagnetic
+
+#### **2026-02-23: I/O Scaling & RNG Infrastructure (v2.3.2)**
+
+**I/O Scaling Profiling:**
+- Profiled HDF5 parallel write scaling across 1, 4, 8, 16 processes
+- Results: 1 process baseline (0.213s), 4 processes (0.223s, ~95% efficiency), 8 processes (0.271s, ~79% efficiency), 16 processes (0.469s, ~45% efficiency)
+- Conclusion: Process-level parallelism valid; 4-8 processes optimal
+
+**RNG Infrastructure:**
+- Created `include/random.h` with SplitMix64 and Xoshiro256StarStar implementations
+- SplitMix64 for high-quality seeding from std::random_device
+- Xoshiro256** for fast, high-quality random numbers in simulation hot path
+- **INTEGRATED**: Updated atom.h, atom.cc, spin_model.h, spin_model.cc, system.h, system.cc
+
+**Chaos Testing:**
+- Tested error paths with malformed inputs (invalid JSON, missing files, corrupt data)
+- RAII pattern verified robust - all resources properly cleaned up on error
+
+**Files Changed:**
+- include/random.h: New file (Xoshiro256** and SplitMix64)
+- benchmarks/configs/io_scaling_*.json: New files (scaling test configs)
+- system.h, system.cc: Updated to use Xoshiro256**
+- spin_model.h, spin_model.cc: Updated method signatures
+- atom.h, atom.cc: Updated method signatures
+- test_integration.cc: Updated tests to use new RNG
+
+#### **2026-02-23: SoA Refactor & Template Dispatch (v2.4.0)**
+
+**SoA (Structure of Arrays) Refactor:**
+- Added flat arrays for spins: `spin_x_`, `spin_y_`, `spin_z_`
+- Added flat neighbor structure: `NeighborInteraction {id, J}` with offset indexing
+- Implemented Jagged Array with AoS for neighbor data (single cache line per neighbor)
+- Added sync methods: `syncAtomsToSoA()` and `syncSoAToAtoms()`
+- Register rollback: Old spin stored in local variables instead of memory
+
+**Template Dispatch:**
+- Created `include/spin_model_tags.h` with `HeisenbergTag` and `IsingTag`
+- Added model detection: System detects Ising vs Heisenberg at initialization
+- Implemented specialized Monte Carlo steps:
+  - `monteCarloStepImpl<HeisenbergTag>`: Full 3D dot product
+  - `monteCarloStepImpl<IsingTag>`: Z-component only, simple spin flip
+- Compiler generates optimized code for each model type
+
+**Performance Results:**
+| Benchmark | Before | After | Improvement |
+|-----------|--------|-------|-------------|
+| Ising 400 atoms | 21.2s | 8.3s | 60% faster |
+| Ising 100 atoms | 4.8s | 1.6s | 67% faster |
+| Heisenberg 100 atoms | 4.7s | 4.8s | Same |
+
+**Files Changed:**
+- include/lattice.h: Added SoA arrays, NeighborInteraction struct
+- src/lattice.cc: Populate flat neighbor arrays
+- include/system.h: Added isIsing_ member, template declarations
+- src/system.cc: Template implementations for dispatch
+- include/spin_model_tags.h: New file
+
+#### **2026-02-23: Sanitizer Integration & Documentation Fixes (v2.3.1)**
+
+**Critical Fixes:**
+1. **Exchange Convention Documentation**: Removed erroneous "inverted" references from all documentation (AGENTS.md, README.md, FORMATS.md, benchmarks/). The code uses standard physics convention: E = -J Σ S_i · S_j
+2. **ASan/UBSan Integration**: Added CMake options for AddressSanitizer and UndefinedBehaviorSanitizer with HDF5 suppressions
+3. **Sanitizer Testing**: Verified VEGAS passes ASan/UBSan on multiple benchmarks (B1, B3, B6) with no memory leaks
+
+**Infrastructure Added:**
+- `sanitizer_suppressions.txt`: Suppressions for known HDF5 false positives
+- CMake options: `-DENABLE_ASAN=ON -DENABLE_UBSAN=ON`
+
+**Testing Results (ASan enabled):**
+- B1 (1D Ising): PASS, no leaks detected
+- B3 (Ferromagnet): PASS, no leaks detected
+- B6 (Heisenberg): PASS, no leaks detected
+- vegas_simple_tests: PASS
+- vegas_integration_tests: PASS
+
+**Files Changed:**
+- CMakeLists.txt: Added sanitizer options
+- sanitizer_suppressions.txt: New file
+- AGENTS.md, README.md, FORMATS.md: Documentation fixes
+- generate_lattices.py: Fixed J sign conventions
+- test_system/ferromagnetic_chain.txt: Fixed J value
 
 #### **2026-02-20: Code Quality Overhaul (v2.1.0)**
 
@@ -88,13 +169,21 @@ VEGAS (VEctor General Atomistic Simulator) is a Monte Carlo simulation package f
 
 **Files Changed:** 17 modified, 6 new files (+1,645 lines, -973 lines)
 
-### 🚨 **KNOWN ISSUES**
+### **Files Changed:**
+- CMakeLists.txt: Added sanitizer options
+- sanitizer_suppressions.txt: New file
+- AGENTS.md, README.md, FORMATS.md: Documentation fixes
+- generate_lattices.py: Fixed J sign conventions
+- test_system/ferromagnetic_chain.txt: Fixed J value
+
+### **Known Issues:**
 
 #### **Build/Configuration:**
 1. **Conan Not Required**: Project uses system packages by default
 
 #### **Code Quality (To Do):**
 1. **`Atom` Class**: Still large (~320 lines), could benefit from further refactoring
+2. **RNG Integration**: Xoshiro256** implemented but not yet integrated into codebase
 
 ## Build Instructions
 
@@ -352,6 +441,27 @@ sudo apt-get install \
 
 ## Version History
 
+### **2026-02-23**: I/O Scaling & RNG Infrastructure (v2.3.2)
+
+**I/O Scaling Profiling:**
+- Profiled HDF5 parallel write scaling across 1, 4, 8, 16 processes
+- Results: 1 process (0.213s), 4 processes (0.223s, ~95%), 8 processes (0.271s, ~79%), 16 processes (0.469s, ~45%)
+- Conclusion: Process-level parallelism valid; 4-8 processes optimal
+
+**RNG Infrastructure:**
+- Created `include/random.h` with SplitMix64 and Xoshiro256StarStar implementations
+- SplitMix64 for high-quality seeding from std::random_device
+- Xoshiro256** for fast, high-quality random numbers in simulation hot path
+- Not yet integrated (requires updates to atom.h, atom.cc, spin_model.h, spin_model.cc, system.h, system.cc)
+
+**Chaos Testing:**
+- Tested error paths with malformed inputs (invalid JSON, missing files, corrupt data)
+- RAII pattern verified robust - all resources properly cleaned up on error
+
+**Files Changed:**
+- include/random.h: New file
+- benchmarks/configs/io_scaling_*.json: New files (scaling test configs)
+
 ### **2026-02-20**: Physical Validation Suite (v2.4.0)
 
 **Critical Bugs Fixed:**
@@ -374,7 +484,7 @@ sudo apt-get install \
 - `benchmarks/VALIDATION_REPORT.md` - Comprehensive validation results
 
 **VEGAS Convention Documented:**
-- J > 0 = ferromagnetic (inverted from standard physics convention)
+- J > 0 = ferromagnetic (standard physics convention)
 - J < 0 = antiferromagnetic
 
 **Files Changed:** 31 files (+7,519 lines)

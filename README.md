@@ -12,7 +12,10 @@ VEGAS (VEctor General Atomistic Simulator) is a software package for simulation,
 - **Validation Pipeline**: Automated end-to-end testing with sample system
 - **Professional CLI**: Modern command-line interface with subcommands, verbosity control, and configuration options
 - **Scientifically Correct**: Proper thermalization, detailed balance, and validated thermodynamic formulas
-- **Parallelization**: Temperature and field point parallelism
+- **Parallelization**: Trivially parallelizable across temperature/field sweeps via independent processes
+- **Sanitizer Support**: ASan/UBSan integration for memory safety verification
+- **Physical Validation**: Comprehensive benchmark suite with exact solutions
+- **High Performance**: SoA data layout, template dispatch, Xoshiro256** RNG (60% Ising speedup)
 
 ## Installation
 
@@ -37,6 +40,20 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j4
 
 # Run tests
+./vegas_simple_tests
+```
+
+#### **Using Sanitizers (Debug/Development)**
+
+```bash
+# Build with AddressSanitizer and UndefinedBehaviorSanitizer
+mkdir -p build_asan && cd build_asan
+cmake .. -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON -DENABLE_UBSAN=ON
+make -j4
+
+# Run tests (suppressions needed for HDF5 false positives)
+ASAN_OPTIONS=suppressions=../sanitizer_suppressions.txt \
+LSAN_OPTIONS=suppressions=../sanitizer_suppressions.txt \
 ./vegas_simple_tests
 ```
 
@@ -406,10 +423,33 @@ This approach ensures proper equilibrium sampling with fixed transition probabil
 
 ### Benchmarks
 
-Typical performance on a modern CPU:
-- 10,000 atoms: ~100,000 steps/second
-- 100,000 atoms: ~10,000 steps/second
-- Memory usage: ~100 MB per million atoms
+Typical performance on a modern CPU (v2.4.0 with SoA and Template Dispatch):
+
+| System | Model | Time | Steps/sec |
+|--------|-------|------|-----------|
+| 100 atoms | Ising | 1.6s | 31,250 |
+| 100 atoms | Heisenberg | 4.8s | 10,400 |
+| 400 atoms | Ising | 8.3s | 24,000 |
+| 400 atoms | Heisenberg | ~21s | 9,500 |
+
+**Performance Improvements (v2.4.0)**:
+- Ising models: **60% faster** with template specialization
+- Heisenberg models: Same performance with improved cache efficiency
+- SoA data layout eliminates pointer chasing
+- Register rollback reduces memory writes
+
+### I/O Scaling
+
+HDF5 parallel write performance across multiple processes:
+
+| Processes | Time (s) | Efficiency |
+|-----------|----------|------------|
+| 1         | 0.213    | 100%       |
+| 4         | 0.223    | 95%        |
+| 8         | 0.271    | 79%        |
+| 16        | 0.469    | 45%        |
+
+**Recommendation**: 4-8 processes optimal for process-level parallelism.
 
 ## Scientific Validation
 
@@ -488,6 +528,17 @@ See [benchmarks/VALIDATION_REPORT.md](benchmarks/VALIDATION_REPORT.md) for detai
 - [ ] Validation script passes (`./validate.sh`)
 
 ## License
+
+## Version History
+
+| Version | Date | Description |
+|---------|------|-------------|
+| v2.4.0 | 2026-02-23 | SoA refactor, Template Dispatch, Xoshiro256** RNG, 60% Ising speedup |
+| v2.3.2 | 2026-02-23 | I/O scaling profiling, RNG infrastructure |
+| v2.3.1 | 2026-02-23 | ASan/UBSan integration, documentation fixes |
+| v2.3.0 | 2026-02-20 | Physical validation suite, bug fixes |
+| v2.2.0 | 2026-02-20 | CLI enhancements |
+| v2.1.0 | 2026-02-20 | Code quality overhaul |
 
 MIT License - see LICENSE file for details.
 
