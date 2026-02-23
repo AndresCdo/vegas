@@ -97,3 +97,4 @@ build_asan/
 
 # Benchmark results (HDF5 output - don't track)
 benchmarks/results/*.h5
+paper/
