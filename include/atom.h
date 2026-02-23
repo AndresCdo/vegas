@@ -3,6 +3,7 @@
 
 #include "params.h"
 #include "spin_model.h"
+#include "random.h"
 
 #include <string>
 #include <functional>
@@ -78,12 +79,12 @@ public:
 
     // Spin model methods
     void initializeRandomState(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator);
     
     void randomizeSpin(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Real sigma,

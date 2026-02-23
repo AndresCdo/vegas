@@ -2,6 +2,7 @@
 #define SPIN_MODEL_H
 
 #include "params.h"
+#include "random.h"
 #include <functional>
 #include <memory>
 #include <random>
@@ -17,14 +18,14 @@ public:
     
     // Initialize random spin state
     virtual void initializeRandomState(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Atom& atom) const = 0;
     
     // Randomize spin
     virtual void randomizeSpin(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Real sigma,
@@ -39,13 +40,13 @@ public:
 class HeisenbergSpinModel : public SpinModel {
 public:
     void initializeRandomState(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Atom& atom) const override;
     
     void randomizeSpin(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Real sigma,
@@ -58,13 +59,13 @@ public:
 class IsingSpinModel : public SpinModel {
 public:
     void initializeRandomState(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Atom& atom) const override;
     
     void randomizeSpin(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Real sigma,

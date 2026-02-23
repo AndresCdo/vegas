@@ -1,0 +1,17 @@
+# AddressSanitizer/ LeakSanitizer suppressions for VEGAS
+# Suppress known HDF5 internal memory allocations that are not actual leaks
+
+# HDF5 memory pooling
+leak:H5PL*
+leak:H5FD
+leak:h5dump
+
+# HDF5's internal memory allocator
+leak:H5MM*
+
+# Third-party allocations
+leak:libstdc++
+leak:libgcc*
+
+# Thread initialization
+leak:pthread_create*

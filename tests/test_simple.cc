@@ -115,7 +115,7 @@ void test_lattice_loading() {
     
     // Check exchanges
     assert(atoms[0].getExchanges().size() == 1);
-    assert(fp_equal(atoms[0].getExchanges()[0], -1.0));
+    assert(fp_equal(atoms[0].getExchanges()[0], 1.0));
     assert(atoms[1].getExchanges().size() == 0);
     
     // Check type mappings

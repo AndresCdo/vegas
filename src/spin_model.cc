@@ -1,6 +1,7 @@
 #include "../include/spin_model.h"
 #include "../include/atom.h"
 #include "../include/params.h"
+#include "../include/random.h"
 
 #include <cmath>
 #include <random>
@@ -61,7 +62,7 @@ namespace {
 
 // HeisenbergSpinModel implementation
 void HeisenbergSpinModel::initializeRandomState(
-    std::mt19937_64& engine,
+    vegas::Xoshiro256StarStar& engine,
     std::uniform_real_distribution<>& realRandomGenerator,
     std::normal_distribution<>& gaussianRandomGenerator,
     Atom& atom) const
@@ -73,7 +74,7 @@ void HeisenbergSpinModel::initializeRandomState(
 }
 
 void HeisenbergSpinModel::randomizeSpin(
-    std::mt19937_64& engine,
+    vegas::Xoshiro256StarStar& engine,
     std::uniform_real_distribution<>& realRandomGenerator,
     std::normal_distribution<>& gaussianRandomGenerator,
     Real sigma,
@@ -104,7 +105,7 @@ void HeisenbergSpinModel::randomizeSpin(
 
 // IsingSpinModel implementation
 void IsingSpinModel::initializeRandomState(
-    std::mt19937_64& engine,
+    vegas::Xoshiro256StarStar& engine,
     std::uniform_real_distribution<>& realRandomGenerator,
     std::normal_distribution<>& gaussianRandomGenerator,
     Atom& atom) const
@@ -117,7 +118,7 @@ void IsingSpinModel::initializeRandomState(
 }
 
 void IsingSpinModel::randomizeSpin(
-    std::mt19937_64& engine,
+    vegas::Xoshiro256StarStar& engine,
     std::uniform_real_distribution<>& realRandomGenerator,
     std::normal_distribution<>& gaussianRandomGenerator,
     Real sigma,
@@ -132,7 +133,7 @@ void IsingSpinModel::randomizeSpin(
 class QuantumIsingSpinModel : public SpinModel {
 public:
     void initializeRandomState(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Atom& atom) const override
@@ -144,7 +145,7 @@ public:
     }
     
     void randomizeSpin(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Real sigma,
@@ -164,7 +165,7 @@ public:
 class AdaptiveSpinModel : public SpinModel {
 public:
     void initializeRandomState(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Atom& atom) const override
@@ -176,7 +177,7 @@ public:
     }
     
     void randomizeSpin(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Real sigma,
@@ -209,7 +210,7 @@ public:
     ConeSpinModel(Real coneAngle) : coneAngle_(coneAngle) {}
     
     void initializeRandomState(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Atom& atom) const override
@@ -221,7 +222,7 @@ public:
     }
     
     void randomizeSpin(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Real sigma,
@@ -264,7 +265,7 @@ public:
     HNSpinModel(Real coneAngle) : coneAngle_(coneAngle) {}
     
     void initializeRandomState(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Atom& atom) const override
@@ -276,7 +277,7 @@ public:
     }
     
     void randomizeSpin(
-        std::mt19937_64& engine,
+        vegas::Xoshiro256StarStar& engine,
         std::uniform_real_distribution<>& realRandomGenerator,
         std::normal_distribution<>& gaussianRandomGenerator,
         Real sigma,

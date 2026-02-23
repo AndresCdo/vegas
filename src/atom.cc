@@ -1,4 +1,5 @@
 #include "../include/atom.h"
+#include "../include/random.h"
 
 Real dot(const Array& A, const Array& B)
 {
@@ -291,7 +292,7 @@ void Atom::setTypeIndex(const Index& typeIndex)
 
 // Spin model method implementations
 void Atom::initializeRandomState(
-    std::mt19937_64& engine,
+    vegas::Xoshiro256StarStar& engine,
     std::uniform_real_distribution<>& realRandomGenerator,
     std::normal_distribution<>& gaussianRandomGenerator)
 {
@@ -301,7 +302,7 @@ void Atom::initializeRandomState(
 }
 
 void Atom::randomizeSpin(
-    std::mt19937_64& engine,
+    vegas::Xoshiro256StarStar& engine,
     std::uniform_real_distribution<>& realRandomGenerator,
     std::normal_distribution<>& gaussianRandomGenerator,
     Real sigma,

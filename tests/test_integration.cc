@@ -5,6 +5,7 @@
 #include "../include/atom.h"
 #include "../include/lattice.h"
 #include "../include/spin_model.h"
+#include "../include/random.h"
 #include <iostream>
 #include <cassert>
 #include <random>
@@ -66,7 +67,7 @@ void test_atom_spin_model_integration() {
     std::cout << "Testing Atom-SpinModel integration... ";
     
     // Create random number generators
-    std::mt19937_64 engine(42);
+    vegas::Xoshiro256StarStar engine(42);
     std::uniform_real_distribution<> realRandomGenerator(0.0, 1.0);
     std::normal_distribution<> gaussianRandomGenerator(0.0, 1.0);
     
@@ -107,7 +108,7 @@ void test_spin_model_randomization() {
     std::cout << "Testing spin model randomization... ";
     
     // Create random number generators
-    std::mt19937_64 engine(123);
+    vegas::Xoshiro256StarStar engine(123);
     std::uniform_real_distribution<> realRandomGenerator(0.0, 1.0);
     std::normal_distribution<> gaussianRandomGenerator(0.0, 1.0);
     
