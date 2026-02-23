@@ -1,6 +1,33 @@
 cmake_minimum_required(VERSION 3.20)
 project(vegas LANGUAGES CXX C)
 
+# Sanitizer options (off by default)
+option(ENABLE_ASAN "Enable AddressSanitizer (memory errors)" OFF)
+option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer (undefined behavior)" OFF)
+
+# Apply sanitizer flags if enabled
+if(ENABLE_ASAN OR ENABLE_UBSAN)
+    set(SANITIZER_FLAGS "-fno-omit-frame-pointer")
+    
+    if(ENABLE_ASAN)
+        set(SANITIZER_FLAGS "${SANITIZER_FLAGS} -fsanitize=address")
+        message(STATUS "AddressSanitizer enabled")
+    endif()
+    
+    if(ENABLE_UBSAN)
+        set(SANITIZER_FLAGS "${SANITIZER_FLAGS} -fsanitize=undefined")
+        message(STATUS "UndefinedBehaviorSanitizer enabled")
+    endif()
+    
+    # Set compiler and linker flags
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SANITIZER_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${SANITIZER_FLAGS}")
+    
+    # ASan options with suppressions
+    set(ASAN_OPTIONS "suppressions=${CMAKE_SOURCE_DIR}/sanitizer_suppressions.txt")
+    set(LSAN_OPTIONS "suppressions=${CMAKE_SOURCE_DIR}/sanitizer_suppressions.txt")
+endif()
+
 # Enable testing
 enable_testing()
 

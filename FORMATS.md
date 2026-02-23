@@ -32,6 +32,33 @@ or
 **Field Specification:**
 Same format as temperature.
 
+### Lattice File Format
+
+The lattice file defines atoms and their interactions. Each line in the interactions section specifies an exchange coupling constant J.
+
+**Exchange Convention:**
+The exchange energy is calculated as:
+
+```
+E = -J * Σ (S_i · S_j)
+```
+
+Where:
+- **J > 0**: Ferromagnetic coupling (spins align parallel to minimize energy)
+- **J < 0**: Antiferromagnetic coupling (spins align antiparallel to minimize energy)
+
+This is the standard physics convention used in statistical mechanics.
+
+**File Structure:**
+```
+num_atoms num_interactions num_types
+type1 type2 ...  # Atom type names
+atom_index pos_x pos_y pos_z spin_norm hx hy hz type spin_model
+...
+interaction_index neighbor_index exchange_J
+...
+```
+
 ### Initial State File
 
 Optional text file specifying initial spin configurations:
