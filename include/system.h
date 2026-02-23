@@ -5,7 +5,8 @@
 #include <cmath>
 #include "lattice.h"
 #include "reporter.h"
-
+#include "random.h"
+#include "spin_model_tags.h"
 
 class System
 {
@@ -30,6 +31,7 @@ public:
     void ComputeMagnetization();
     Real localEnergy(Index index, Real H);
     Real localEnergy(const Atom& atom, Real H);
+    Real localEnergySoA(Index index, Real H);  // SoA-native version (Heisenberg)
 
 
     Real totalEnergy(Real H);
@@ -37,6 +39,10 @@ public:
     void randomizeSpins();
     
     void monteCarloStep(Real T, Real H);
+
+    // Template implementations for dispatch
+    template<typename ModelTag>
+    void monteCarloStepImpl(Real T, Real H);
 
     void monteCarloStep_ising(Real T, Real H);
     
@@ -70,7 +76,7 @@ private:
 
     std::vector<Array> magnetizationByTypeIndex_;
 
-    std::mt19937_64 engine_;
+    vegas::Xoshiro256StarStar engine_;
     std::uniform_real_distribution<> realRandomGenerator_;
     std::uniform_int_distribution<> intRandomGenerator_;
     std::normal_distribution<> gaussianRandomGenerator_;
@@ -81,6 +87,7 @@ private:
     std::vector<Index> counterRejections_;
 
     Index num_types_;
+    bool isIsing_;  // Model type for template dispatch
 };
 
 #endif

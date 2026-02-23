@@ -1,4 +1,6 @@
 #include "../include/system.h"
+#include "../include/random.h"
+#include "../include/spin_model_tags.h"
 #include <iostream>
 #include <iomanip>
 #include <cstdio>
@@ -80,7 +82,8 @@ System::System(std::string fileName,
                Index mcs,
                Index seed,
                std::string outName,
-               Real kb) : lattice_(fileName)
+               Real kb) : lattice_(fileName),
+                          engine_(0)
 {
     this -> mcs_ = mcs;
     this -> thermalizationFraction_ = DEFAULT_THERMALIZATION_FRACTION;
@@ -94,8 +97,19 @@ System::System(std::string fileName,
     this -> outName_ = outName;
 
     this -> num_types_ = this -> lattice_.getMapTypeIndexes().size();
+    
+    // Detect if system is Ising or Heisenberg for template dispatch
+    const auto& atoms = this -> lattice_.getAtoms();
+    if (!atoms.empty()) {
+        std::string model = atoms[0].getModel();
+        this -> isIsing_ = (model == "ising");
+    } else {
+        this -> isIsing_ = false;
+    }
 
-    this -> engine_.seed(seed);
+    std::random_device rd;
+    uint64_t base_seed = (seed != 0) ? static_cast<uint64_t>(seed) : rd();
+    this -> engine_ = vegas::Xoshiro256StarStar(base_seed);
     this -> seed_ = seed;
 
     this -> sigma_ = std::vector<Real>(this -> num_types_);
@@ -111,6 +125,8 @@ System::System(std::string fileName,
 
     std::remove(outName.c_str());
 
+    // Initialize SoA from Atoms after lattice is loaded
+    this -> lattice_.syncAtomsToSoA();
 
     this -> reporter_ = Reporter(this -> outName_,
                                  this -> magnetizationByTypeIndex_,
@@ -225,37 +241,204 @@ Real System::totalEnergy(Real H)
     return 0.5 * exchange_energy + other_energy;
 }
 
+// SoA-native local energy calculation (Heisenberg model)
+// Uses direct array access instead of Atom objects
+Real System::localEnergySoA(Index i, Real H)
+{
+    // Get SoA data pointers
+    const Real* spin_x = lattice_.getSpinX();
+    const Real* spin_y = lattice_.getSpinY();
+    const Real* spin_z = lattice_.getSpinZ();
+    
+    const auto& neighborIndexes = lattice_.getNeighborIndexes()[i];
+    const auto& exchanges = lattice_.getExchanges()[i];
+    
+    // Current spin components
+    Real sx = spin_x[i];
+    Real sy = spin_y[i];
+    Real sz = spin_z[i];
+    
+    // Exchange energy
+    Real exchange_energy = 0.0;
+    for (size_t j = 0; j < neighborIndexes.size(); ++j) {
+        Index nbh = neighborIndexes[j];
+        exchange_energy -= exchanges[j] * (
+            sx * spin_x[nbh] + 
+            sy * spin_y[nbh] + 
+            sz * spin_z[nbh]
+        );
+    }
+    
+    // Zeeman energy (assuming external field in z-direction for simplicity)
+    // For full support, would need external field from lattice
+    Real zeeman_energy = 0.0;
+    
+    // Apply 0.5 correction for bidirectional bonds
+    return 0.5 * exchange_energy + zeeman_energy;
+}
+
 void System::randomizeSpins()
 {
     for (auto& atom : this -> lattice_.getAtoms())
         atom.initializeRandomState(this -> engine_,
             this -> realRandomGenerator_,
             this -> gaussianRandomGenerator_);
+    // Sync updated spins to SoA
+    this -> lattice_.syncAtomsToSoA();
 }
 
-
-void System::monteCarloStep(Real T, Real H)
+// Template dispatch: Heisenberg implementation
+template<>
+void System::monteCarloStepImpl<HeisenbergTag>(Real T, Real H)
 {
-    Index num = Index(this -> realRandomGenerator_(this -> engine_) * NUM_SPIN_MODELS);
-    for (Index _ = 0; _ < this -> lattice_.getAtoms().size(); ++_)
+    Index N = this -> lattice_.getNumAtoms();
+    const Real* spin_x = lattice_.getSpinX();
+    const Real* spin_y = lattice_.getSpinY();
+    const Real* spin_z = lattice_.getSpinZ();
+    Real* spin_x_mut = lattice_.getSpinX();
+    Real* spin_y_mut = lattice_.getSpinY();
+    Real* spin_z_mut = lattice_.getSpinZ();
+    
+    const std::vector<Index>& typeIndices = lattice_.getTypeIndices();
+    const std::vector<Real>& spinNorms = lattice_.getSpinNorms();
+    const std::vector<Index>& neighborOffsets = lattice_.getNeighborOffsets();
+    const std::vector<NeighborInteraction>& flatNeighbors = lattice_.getFlatNeighbors();
+    
+    for (Index _ = 0; _ < N; ++_)
     {
-        Index randIndex = this -> intRandomGenerator_(this -> engine_);
-        Atom& atom = this -> lattice_.getAtoms().at(randIndex);
-        Real oldEnergy = this -> localEnergy(atom, H);
-        atom.randomizeSpin(this -> engine_,
-            this -> realRandomGenerator_,
-            this -> gaussianRandomGenerator_,
-            this -> sigma_.at(atom.getTypeIndex()), num);
-        Real newEnergy = this -> localEnergy(atom, H);
+        Index i = this -> intRandomGenerator_(this -> engine_);
+        Index typeIdx = typeIndices[i];
+        Real sigma = this -> sigma_.at(typeIdx);
+        
+        Real old_sx = spin_x[i];
+        Real old_sy = spin_y[i];
+        Real old_sz = spin_z[i];
+        
+        Index neighStart = neighborOffsets[i];
+        Index neighEnd = neighborOffsets[i + 1];
+        
+        // Heisenberg: full 3D dot product
+        Real oldEnergy = 0.0;
+        for (Index j = neighStart; j < neighEnd; ++j) {
+            Index nbh = flatNeighbors[j].id;
+            Real J = flatNeighbors[j].J;
+            oldEnergy -= J * (
+                old_sx * spin_x[nbh] + 
+                old_sy * spin_y[nbh] + 
+                old_sz * spin_z[nbh]
+            );
+        }
+        oldEnergy *= 0.5;
+        
+        // Heisenberg: 3D Gaussian perturbation
+        Real prop_sx = old_sx + sigma * this -> gaussianRandomGenerator_(this -> engine_);
+        Real prop_sy = old_sy + sigma * this -> gaussianRandomGenerator_(this -> engine_);
+        Real prop_sz = old_sz + sigma * this -> gaussianRandomGenerator_(this -> engine_);
+        
+        Real prop_norm = std::sqrt(prop_sx * prop_sx + prop_sy * prop_sy + prop_sz * prop_sz);
+        if (prop_norm > EPSILON) {
+            Real snorm = spinNorms[i];
+            prop_sx = snorm * prop_sx / prop_norm;
+            prop_sy = snorm * prop_sy / prop_norm;
+            prop_sz = snorm * prop_sz / prop_norm;
+        }
+        
+        spin_x_mut[i] = prop_sx;
+        spin_y_mut[i] = prop_sy;
+        spin_z_mut[i] = prop_sz;
+        
+        // Heisenberg energy
+        Real newEnergy = 0.0;
+        for (Index j = neighStart; j < neighEnd; ++j) {
+            Index nbh = flatNeighbors[j].id;
+            Real J = flatNeighbors[j].J;
+            newEnergy -= J * (
+                prop_sx * spin_x[nbh] + 
+                prop_sy * spin_y[nbh] + 
+                prop_sz * spin_z[nbh]
+            );
+        }
+        newEnergy *= 0.5;
+        
         Real deltaEnergy = newEnergy - oldEnergy;
-
+        
         if (deltaEnergy > 0 && this -> realRandomGenerator_(this -> engine_) > std::exp(- deltaEnergy / (this -> kb_ * T)))
         {
-            atom.revertSpin();
-            this -> counterRejections_.at(atom.getTypeIndex()) += 1;
+            spin_x_mut[i] = old_sx;
+            spin_y_mut[i] = old_sy;
+            spin_z_mut[i] = old_sz;
+            this -> counterRejections_.at(typeIdx) += 1;
         }
     }
 }
+
+// Template dispatch: Ising implementation
+template<>
+void System::monteCarloStepImpl<IsingTag>(Real T, Real H)
+{
+    Index N = this -> lattice_.getNumAtoms();
+    const Real* spin_z = lattice_.getSpinZ();
+    Real* spin_z_mut = lattice_.getSpinZ();
+    
+    const std::vector<Index>& typeIndices = lattice_.getTypeIndices();
+    const std::vector<Real>& spinNorms = lattice_.getSpinNorms();
+    const std::vector<Index>& neighborOffsets = lattice_.getNeighborOffsets();
+    const std::vector<NeighborInteraction>& flatNeighbors = lattice_.getFlatNeighbors();
+    
+    for (Index _ = 0; _ < N; ++_)
+    {
+        Index i = this -> intRandomGenerator_(this -> engine_);
+        Index typeIdx = typeIndices[i];
+        
+        // Ising: only flip between +S and -S
+        Real snorm = spinNorms[i];
+        Real old_sz = spin_z[i];
+        int spin_sign = (old_sz > 0) ? 1 : -1;
+        Real prop_sz = -spin_sign * snorm;  // Flip direction
+        
+        Index neighStart = neighborOffsets[i];
+        Index neighEnd = neighborOffsets[i + 1];
+        
+        // Ising: only Z component energy
+        Real oldEnergy = 0.0;
+        for (Index j = neighStart; j < neighEnd; ++j) {
+            Index nbh = flatNeighbors[j].id;
+            Real J = flatNeighbors[j].J;
+            oldEnergy -= J * old_sz * spin_z[nbh];
+        }
+        oldEnergy *= 0.5;
+        
+        spin_z_mut[i] = prop_sz;
+        
+        // New energy with flipped spin
+        Real newEnergy = 0.0;
+        for (Index j = neighStart; j < neighEnd; ++j) {
+            Index nbh = flatNeighbors[j].id;
+            Real J = flatNeighbors[j].J;
+            newEnergy -= J * prop_sz * spin_z[nbh];
+        }
+        newEnergy *= 0.5;
+        
+        Real deltaEnergy = newEnergy - oldEnergy;
+        
+        if (deltaEnergy > 0 && this -> realRandomGenerator_(this -> engine_) > std::exp(- deltaEnergy / (this -> kb_ * T)))
+        {
+            spin_z_mut[i] = old_sz;  // Reject: restore old value
+            this -> counterRejections_.at(typeIdx) += 1;
+        }
+    }
+}
+
+void System::monteCarloStep(Real T, Real H)
+{
+    // Dispatch to specialized implementation based on model type
+    if (this -> isIsing_) {
+        monteCarloStepImpl<IsingTag>(T, H);
+    } else {
+        monteCarloStepImpl<HeisenbergTag>(T, H);
+    }
+}
+
 
 void System::cycle()
 {
@@ -326,6 +509,8 @@ void System::cycle()
             histMag_z.at(this -> num_types_).push_back(this -> magnetizationByTypeIndex_.at(this -> num_types_)[2]);
 
         }
+        // Sync SoA to Atoms before HDF5 output
+        this -> lattice_.syncSoAToAtoms();
         this -> reporter_.partial_report(enes, histMag_x, histMag_y, histMag_z, this -> lattice_, index);
 
 
