@@ -59,7 +59,10 @@ public:
     const std::map<std::string, Array>& getMagnetizationType() const;
 
     void setState(std::string fileState);
-
+    
+    void writeCheckpoint(std::string filename, Index tempIndex);
+    bool loadCheckpoint(std::string filename, Index& tempIndex);
+    
     void setAnisotropies(std::vector<std::string> anisotropyfiles);
 
 private:
@@ -88,6 +91,7 @@ private:
 
     Index num_types_;
     bool isIsing_;  // Model type for template dispatch
+    Index resumeIndex_;  // Temperature index to resume from (0 = start fresh)
 };
 
 #endif

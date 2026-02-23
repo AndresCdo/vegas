@@ -33,7 +33,8 @@ void run_simulation(const std::string& config_file, bool verbose = true, bool us
     const std::optional<Real>& kbOverride = std::nullopt,
     const std::optional<std::string>& outputOverride = std::nullopt,
     const std::optional<std::string>& sampleOverride = std::nullopt,
-    const std::optional<std::string>& initialStateOverride = std::nullopt);
+    const std::optional<std::string>& initialStateOverride = std::nullopt,
+    const std::optional<std::string>& resumeFile = std::nullopt);
 void analyze_output(const std::string& h5_file, bool verbose = true, bool use_color = true);
 void validate_config(const std::string& config_file, bool verbose = true, bool use_color = true);
 void print_info(bool verbose = true);
@@ -136,7 +137,8 @@ void run_simulation(const std::string& config_file, bool verbose, bool use_color
     const std::optional<Real>& kbOverride,
     const std::optional<std::string>& outputOverride,
     const std::optional<std::string>& sampleOverride,
-    const std::optional<std::string>& initialStateOverride)
+    const std::optional<std::string>& initialStateOverride,
+    const std::optional<std::string>& resumeFile)
 {
     if (verbose && use_color) {
         print_header(use_color);
@@ -150,6 +152,18 @@ void run_simulation(const std::string& config_file, bool verbose, bool use_color
     vegas::SystemBuilder builder;
     builder.withConfig(config);
     System system_ = builder.build();
+    
+    // Handle resume from checkpoint
+    if (resumeFile.has_value()) {
+        Index tempIndex = 0;
+        bool loaded = system_.loadCheckpoint(resumeFile.value(), tempIndex);
+        if (!loaded) {
+            throw vegas::SimulationException("Failed to load checkpoint from: " + resumeFile.value());
+        }
+        if (verbose) {
+            std::cout << "Resumed from checkpoint at temperature index: " << tempIndex << "\n";
+        }
+    }
     
     system_.cycle();
     
@@ -281,6 +295,7 @@ int main(int argc, char const *argv[]) {
             ("q,quiet", "Quiet mode (minimal output)")
             ("no-color", "Disable colored output")
             ("c,config", "Configuration file (for backward compatibility)", cxxopts::value<std::string>())
+            ("r,resume", "Resume from checkpoint", cxxopts::value<std::string>())
             // Simulation overrides (only used with 'run' command)
             ("mcs", "Override MCS (Monte Carlo steps)", cxxopts::value<Index>())
             ("seed", "Override random seed", cxxopts::value<Index>())

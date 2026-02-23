@@ -84,6 +84,14 @@ public:
         state_[3] = s3;
     }
     
+    std::array<uint64_t, 4> getState() const {
+        return state_;
+    }
+    
+    void setState(const std::array<uint64_t, 4>& newState) {
+        state_ = newState;
+    }
+    
 private:
     std::array<uint64_t, 4> state_;
 };

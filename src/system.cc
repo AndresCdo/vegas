@@ -1,6 +1,7 @@
 #include "../include/system.h"
 #include "../include/random.h"
 #include "../include/spin_model_tags.h"
+#include <hdf5.h>
 #include <iostream>
 #include <iomanip>
 #include <cstdio>
@@ -106,6 +107,8 @@ System::System(std::string fileName,
     } else {
         this -> isIsing_ = false;
     }
+    
+    this -> resumeIndex_ = 0;  // Default: start from beginning
 
     std::random_device rd;
     uint64_t base_seed = (seed != 0) ? static_cast<uint64_t>(seed) : rd();
@@ -458,7 +461,19 @@ void System::cycle()
     Index final_time = 0;
     Real av_time_per_step = 0.0;
 
-    for (Index index = 0; index < this -> temps_.size(); ++index)
+    // Determine starting index for resume
+    Index startIndex = 0;
+    if (resumeIndex_ > 0) {
+        if (resumeIndex_ >= this -> temps_.size()) {
+            std::cout << "Checkpoint shows simulation already complete. Nothing to do.\n";
+            return;
+        }
+        startIndex = resumeIndex_ + 1;
+        std::cout << "Resuming from checkpoint: Starting at Temperature Index " 
+                  << startIndex << " (T = " << this -> temps_.at(startIndex) << ")\n";
+    }
+
+    for (Index index = startIndex; index < this -> temps_.size(); ++index)
     {
         initial_time = time(NULL);
 
@@ -512,6 +527,9 @@ void System::cycle()
         // Sync SoA to Atoms before HDF5 output
         this -> lattice_.syncSoAToAtoms();
         this -> reporter_.partial_report(enes, histMag_x, histMag_y, histMag_z, this -> lattice_, index);
+        
+        // Write checkpoint after each temperature point
+        this -> writeCheckpoint(this -> outName_, index);
 
 
         final_time = time(NULL);
@@ -693,4 +711,201 @@ void System::setAnisotropies(std::vector<std::string> anisotropyfiles)
             }
         }
     }
+}
+
+void System::writeCheckpoint(std::string filename, Index tempIndex)
+{
+    hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
+    if (file_id < 0) {
+        file_id = H5Fcreate(filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    }
+    
+    if (file_id < 0) {
+        throw vegas::HDF5Exception("Cannot create checkpoint file: " + filename);
+    }
+    
+    // Check if checkpoint group exists and delete it first
+    H5E_auto_t old_func;
+    void* old_client_data;
+    H5Eget_auto2(H5E_DEFAULT, &old_func, &old_client_data);
+    H5Eset_auto2(H5E_DEFAULT, NULL, NULL);
+    
+    hid_t group_id = H5Gopen2(file_id, "/checkpoint", H5P_DEFAULT);
+    H5Eset_auto2(H5E_DEFAULT, old_func, old_client_data);
+    
+    if (group_id >= 0) {
+        H5Gclose(group_id);
+        H5Ldelete(file_id, "/checkpoint", H5P_DEFAULT);
+    }
+    
+    // Create checkpoint group
+    group_id = H5Gcreate2(file_id, "/checkpoint", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    if (group_id < 0) {
+        H5Fclose(file_id);
+        throw vegas::HDF5Exception("Cannot create checkpoint group");
+    }
+    
+    Index N = this -> lattice_.getNumAtoms();
+    hsize_t dims[1] = {static_cast<hsize_t>(N)};
+    hid_t dataspace_id = H5Screate_simple(1, dims, NULL);
+    
+    // Write spin_x
+    double* spin_x = const_cast<double*>(lattice_.getSpinX());
+    hid_t dataset_id = H5Dcreate2(group_id, "spin_x", H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, spin_x);
+    H5Dclose(dataset_id);
+    
+    // Write spin_y
+    double* spin_y = const_cast<double*>(lattice_.getSpinY());
+    dataset_id = H5Dcreate2(group_id, "spin_y", H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, spin_y);
+    H5Dclose(dataset_id);
+    
+    // Write spin_z
+    double* spin_z = const_cast<double*>(lattice_.getSpinZ());
+    dataset_id = H5Dcreate2(group_id, "spin_z", H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, spin_z);
+    H5Dclose(dataset_id);
+    
+    H5Sclose(dataspace_id);
+    
+    // Write RNG state
+    auto rngState = this -> engine_.getState();
+    hsize_t rng_dims[1] = {4};
+    hid_t rng_space = H5Screate_simple(1, rng_dims, NULL);
+    dataset_id = H5Dcreate2(group_id, "rng_state", H5T_NATIVE_UINT64, rng_space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dataset_id, H5T_NATIVE_UINT64, H5S_ALL, H5S_ALL, H5P_DEFAULT, rngState.data());
+    H5Dclose(dataset_id);
+    H5Sclose(rng_space);
+    
+    // Write temperature index
+    hsize_t ti_dims[1] = {1};
+    hid_t ti_space = H5Screate_simple(1, ti_dims, NULL);
+    dataset_id = H5Dcreate2(group_id, "temperature_index", H5T_NATIVE_INT, ti_space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    int tempIdx = static_cast<int>(tempIndex);
+    H5Dwrite(dataset_id, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, &tempIdx);
+    H5Dclose(dataset_id);
+    H5Sclose(ti_space);
+    
+    // Write sigma values
+    hsize_t sigma_dims[1] = {static_cast<hsize_t>(sigma_.size())};
+    hid_t sigma_space = H5Screate_simple(1, sigma_dims, NULL);
+    dataset_id = H5Dcreate2(group_id, "sigma", H5T_NATIVE_DOUBLE, sigma_space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, sigma_.data());
+    H5Dclose(dataset_id);
+    H5Sclose(sigma_space);
+    
+    H5Gclose(group_id);
+    H5Fclose(file_id);
+}
+
+bool System::loadCheckpoint(std::string filename, Index& tempIndex)
+{
+    hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+    if (file_id < 0) {
+        return false;
+    }
+    
+    // Check if checkpoint group exists
+    hid_t group_id = H5Gopen2(file_id, "/checkpoint", H5P_DEFAULT);
+    if (group_id < 0) {
+        H5Fclose(file_id);
+        return false;
+    }
+    
+    Index N = this -> lattice_.getNumAtoms();
+    
+    // Validate checkpoint dimensions (rank and size)
+    {
+        // Check spin_x dimensions
+        hid_t check_dataset = H5Dopen2(group_id, "spin_x", H5P_DEFAULT);
+        hid_t check_space = H5Dget_space(check_dataset);
+        int rank = H5Sget_simple_extent_ndims(check_space);
+        if (rank != 1) {
+            H5Sclose(check_space);
+            H5Dclose(check_dataset);
+            H5Gclose(group_id);
+            H5Fclose(file_id);
+            throw vegas::HDF5Exception("Checkpoint spin_x is not a 1D array");
+        }
+        hsize_t dims[1];
+        H5Sget_simple_extent_dims(check_space, dims, NULL);
+        if (dims[0] != N) {
+            H5Sclose(check_space);
+            H5Dclose(check_dataset);
+            H5Gclose(group_id);
+            H5Fclose(file_id);
+            throw vegas::SimulationException("Checkpoint size mismatch: checkpoint has " + 
+                std::to_string(dims[0]) + " atoms but lattice has " + std::to_string(N));
+        }
+        H5Sclose(check_space);
+        H5Dclose(check_dataset);
+        
+        // Check sigma dimensions
+        check_dataset = H5Dopen2(group_id, "sigma", H5P_DEFAULT);
+        check_space = H5Dget_space(check_dataset);
+        rank = H5Sget_simple_extent_ndims(check_space);
+        if (rank != 1) {
+            H5Sclose(check_space);
+            H5Dclose(check_dataset);
+            H5Gclose(group_id);
+            H5Fclose(file_id);
+            throw vegas::HDF5Exception("Checkpoint sigma is not a 1D array");
+        }
+        H5Sget_simple_extent_dims(check_space, dims, NULL);
+        if (dims[0] != sigma_.size()) {
+            H5Sclose(check_space);
+            H5Dclose(check_dataset);
+            H5Gclose(group_id);
+            H5Fclose(file_id);
+            throw vegas::SimulationException("Checkpoint sigma size mismatch");
+        }
+        H5Sclose(check_space);
+        H5Dclose(check_dataset);
+    }
+    
+    // Read spin_x
+    hid_t dataset_id = H5Dopen2(group_id, "spin_x", H5P_DEFAULT);
+    hid_t dataspace_id = H5Dget_space(dataset_id);
+    H5Dread(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, lattice_.getSpinX());
+    H5Sclose(dataspace_id);
+    H5Dclose(dataset_id);
+    
+    // Read spin_y
+    dataset_id = H5Dopen2(group_id, "spin_y", H5P_DEFAULT);
+    dataspace_id = H5Dget_space(dataset_id);
+    H5Dread(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, lattice_.getSpinY());
+    H5Sclose(dataspace_id);
+    H5Dclose(dataset_id);
+    
+    // Read spin_z
+    dataset_id = H5Dopen2(group_id, "spin_z", H5P_DEFAULT);
+    dataspace_id = H5Dget_space(dataset_id);
+    H5Dread(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, lattice_.getSpinZ());
+    H5Sclose(dataspace_id);
+    H5Dclose(dataset_id);
+    
+    // Read RNG state
+    std::array<uint64_t, 4> rngState;
+    dataset_id = H5Dopen2(group_id, "rng_state", H5P_DEFAULT);
+    H5Dread(dataset_id, H5T_NATIVE_UINT64, H5S_ALL, H5S_ALL, H5P_DEFAULT, rngState.data());
+    this -> engine_.setState(rngState);
+    H5Dclose(dataset_id);
+    
+    // Read temperature index
+    int tempIdx = 0;
+    dataset_id = H5Dopen2(group_id, "temperature_index", H5P_DEFAULT);
+    H5Dread(dataset_id, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, &tempIdx);
+    tempIndex = static_cast<Index>(tempIdx);
+    H5Dclose(dataset_id);
+    
+    // Read sigma values
+    dataset_id = H5Dopen2(group_id, "sigma", H5P_DEFAULT);
+    H5Dread(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, sigma_.data());
+    H5Dclose(dataset_id);
+    
+    H5Gclose(group_id);
+    H5Fclose(file_id);
+    
+    return true;
 }
