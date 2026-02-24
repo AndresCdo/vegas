@@ -1,0 +1,9 @@
+{
+  "sample": "benchmarks/lattices/simple_10x10.txt",
+  "mcs": 500000,
+  "kb": 1.0,
+  "seed": 42,
+  "temperature": 1000.0,
+  "field": 0.0,
+  "out": "test_system/heisenberg_100_500k.h5"
+}
