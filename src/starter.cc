@@ -5,6 +5,9 @@
 #include <vector>
 #include <string>
 #include <stdexcept>
+#include <unistd.h>
+#include <climits>
+#include <cstdlib>
 
 namespace STARTER {
 
@@ -13,6 +16,8 @@ namespace STARTER {
                const std::vector<Real>& temps,
                const std::vector<Real>& fields)
     {
+        CHECKFILE(sample);
+        
         std::ifstream infile(sample);
         if (!infile.good())
             throw vegas::FileIOException("The sample file can't open or doesn't exist !!!");
@@ -33,17 +38,61 @@ namespace STARTER {
             throw vegas::InvalidInputException("Filename is empty!");
         }
         
-        // Basic check for path traversal attempts
-        if (filename.find("..") != std::string::npos) {
-            throw vegas::InvalidInputException("Filename contains path traversal attempt: " + filename);
+        // Resolve absolute path
+        char resolved[PATH_MAX];
+        if (realpath(filename.c_str(), resolved) == nullptr) {
+            // File may not exist yet (output files), but we still need to check path safety
+            // For now, allow if no '..' components escape current directory
+            // Simple check: ensure filename doesn't contain /../
+            std::string normalized = filename;
+            size_t pos = 0;
+            while ((pos = normalized.find("/../", pos)) != std::string::npos) {
+                throw vegas::InvalidInputException("Path traversal attempt detected: " + filename);
+            }
+            // Also check for leading ../
+            if (normalized.find("../") == 0) {
+                throw vegas::InvalidInputException("Path traversal attempt detected: " + filename);
+            }
+            // Check for trailing /..
+            if (normalized.size() >= 3 && normalized.substr(normalized.size() - 3) == "/..") {
+                throw vegas::InvalidInputException("Path traversal attempt detected: " + filename);
+            }
+        } else {
+            // File exists, check it's within the project directory (parent of build directory)
+            char cwd[PATH_MAX];
+            if (getcwd(cwd, sizeof(cwd)) == nullptr) {
+                throw vegas::FileIOException("Cannot get current working directory");
+            }
+            
+            // Normalize both paths
+            std::string resolved_str(resolved);
+            std::string cwd_str(cwd);
+            
+            // Remove trailing slash if present
+            if (!cwd_str.empty() && cwd_str.back() == '/') {
+                cwd_str.pop_back();
+            }
+            
+            // Find parent directory of cwd (project root)
+            size_t last_slash = cwd_str.find_last_of('/');
+            if (last_slash == std::string::npos) {
+                // cwd is root directory '/', unlikely
+                throw vegas::FileIOException("Unexpected current directory structure");
+            }
+            std::string parent_dir = cwd_str.substr(0, last_slash);
+            
+            // Ensure parent_dir ends with '/' for prefix check
+            if (!parent_dir.empty() && parent_dir.back() != '/') {
+                parent_dir += '/';
+            }
+            
+            // Ensure resolved path starts with parent_dir
+            if (resolved_str.find(parent_dir) != 0) {
+                throw vegas::InvalidInputException("File path escapes project directory: " + filename);
+            }
         }
         
-        // Check for absolute paths (optional security measure)
-        if (!filename.empty() && filename[0] == '/') {
-            throw vegas::InvalidInputException("Absolute paths are not allowed: " + filename);
-        }
-        
-        // Try to open the file
+        // Try to open the file (for reading)
         std::ifstream infile(filename);
         if (!infile.good()) {
             throw vegas::FileIOException("Cannot open file: " + filename + " (file doesn't exist or permission denied)");

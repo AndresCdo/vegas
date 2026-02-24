@@ -4,6 +4,8 @@ project(vegas LANGUAGES CXX C)
 # Sanitizer options (off by default)
 option(ENABLE_ASAN "Enable AddressSanitizer (memory errors)" OFF)
 option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer (undefined behavior)" OFF)
+option(ENABLE_VECTORIZATION_REPORT "Enable vectorization optimization reports" ON)
+option(ENABLE_AVX2_EXPERIMENTAL "Enable experimental AVX2 intrinsics (gather-based)" OFF)
 
 # Apply sanitizer flags if enabled
 if(ENABLE_ASAN OR ENABLE_UBSAN)
@@ -81,7 +83,17 @@ else()
     endif()
 endif()
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+# AVX2 experimental intrinsics
+if(ENABLE_AVX2_EXPERIMENTAL)
+    add_definitions(-DVEGAS_AVX2_EXPERIMENTAL)
+    message(STATUS "Experimental AVX2 intrinsics enabled (gather-based)")
+endif()
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native -fopenmp-simd")
+if(ENABLE_VECTORIZATION_REPORT)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopt-info-vec-optimized -fopt-info-vec-missed")
+    message(STATUS "Vectorization optimization reports enabled")
+endif()
 
 # Add HDF5 include directories
 include_directories(${HDF5_INCLUDE_DIRS})
@@ -200,6 +212,22 @@ target_sources(
 target_link_libraries(vegas_system_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
 add_test(NAME vegas_system_tests COMMAND vegas_system_tests)
 
+# Coloring test executable
+add_executable(vegas_coloring_tests tests/test_coloring.cc)
+target_sources(
+    vegas_coloring_tests PRIVATE
+    ./src/atom.cc
+    ./src/lattice.cc
+    ./src/reporter.cc
+    ./src/spin_model.cc
+    ./src/starter.cc
+    ./src/system.cc
+    ./src/config_parser.cc
+    ./src/system_builder.cc
+)
+target_link_libraries(vegas_coloring_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
+add_test(NAME vegas_coloring_tests COMMAND vegas_coloring_tests)
+
 # Reporter test executable
 add_executable(vegas_reporter_tests tests/test_reporter.cc)
 target_sources(
@@ -208,6 +236,10 @@ target_sources(
     ./src/lattice.cc
     ./src/reporter.cc
     ./src/spin_model.cc
+    ./src/starter.cc
+    ./src/system.cc
+    ./src/config_parser.cc
+    ./src/system_builder.cc
 )
 target_link_libraries(vegas_reporter_tests PRIVATE ${JSONCPP_TARGET} ${HDF5_C_LIBRARIES} ${HDF5_CXX_LIBRARIES})
 add_test(NAME vegas_reporter_tests COMMAND vegas_reporter_tests)

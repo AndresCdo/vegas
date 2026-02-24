@@ -14,13 +14,16 @@
 #include <fstream>
 #include <vector>
 #include <optional>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <cstring>
 
 // Many functions for checking, errors and read the information were
 // defined in a namespace STARTER into the file starter.h
 using namespace STARTER;
 
 // Version information
-constexpr const char* VEGAS_VERSION = "2.3.0";
+constexpr const char* VEGAS_VERSION = "2.5.0";
 constexpr const char* VEGAS_BUILD_DATE = __DATE__;
 constexpr const char* VEGAS_BUILD_TIME = __TIME__;
 
@@ -39,6 +42,50 @@ void analyze_output(const std::string& h5_file, bool verbose = true, bool use_co
 void validate_config(const std::string& config_file, bool verbose = true, bool use_color = true);
 void print_info(bool verbose = true);
 void report_overrides(const cxxopts::ParseResult& result, bool verbose);
+
+// Safe command execution without shell
+static int safe_exec(const std::vector<std::string>& args) {
+    if (args.empty()) {
+        throw vegas::InvalidInputException("Empty command arguments for safe_exec");
+    }
+    
+    // Convert args to char* array for execvp
+    std::vector<char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& arg : args) {
+        argv.push_back(const_cast<char*>(arg.c_str()));
+    }
+    argv.push_back(nullptr);
+    
+    pid_t pid = fork();
+    if (pid == -1) {
+        // Fork failed
+        throw vegas::SimulationException("Failed to fork process for analyzer");
+    }
+    
+    if (pid == 0) {
+        // Child process
+        execvp(args[0].c_str(), argv.data());
+        // If execvp returns, it failed
+        std::cerr << "Failed to execute: " << args[0] << std::endl;
+        _exit(127); // Use _exit to avoid flushing stdio buffers
+    }
+    
+    // Parent process
+    int status;
+    if (waitpid(pid, &status, 0) == -1) {
+        throw vegas::SimulationException("Failed to wait for analyzer process");
+    }
+    
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        throw vegas::SimulationException("Analyzer process terminated by signal: " + 
+                                         std::to_string(WTERMSIG(status)));
+    } else {
+        throw vegas::SimulationException("Analyzer process terminated abnormally");
+    }
+}
 
 // Helper function implementations
 void report_overrides(const cxxopts::ParseResult& result, bool verbose) {
@@ -180,6 +227,7 @@ void run_simulation(const std::string& config_file, bool verbose, bool use_color
 }
 
 void analyze_output(const std::string& h5_file, bool verbose, bool use_color) {
+    CHECKFILE(h5_file);
     std::ifstream h5_check(h5_file);
     if (!h5_check.good()) {
         throw vegas::FileIOException("HDF5 file not found: " + h5_file);
@@ -187,6 +235,7 @@ void analyze_output(const std::string& h5_file, bool verbose, bool use_color) {
     h5_check.close();
     
     std::string analyzer = "analyzers/vegas-analyzer-lite.py";
+    CHECKFILE(analyzer);
     std::ifstream analyzer_check(analyzer);
     if (!analyzer_check.good()) {
         if (use_color) rlutil::setColor(rlutil::LIGHTRED);
@@ -209,8 +258,9 @@ void analyze_output(const std::string& h5_file, bool verbose, bool use_color) {
         std::cout << "Using analyzer: " << analyzer << "\n\n";
     }
     
-    std::string cmd = python + " " + analyzer + " " + h5_file;
-    int result = std::system(cmd.c_str());
+    // Use safe execution without shell
+    std::vector<std::string> args = {python, analyzer, h5_file};
+    int result = safe_exec(args);
     
     if (result != 0) {
         if (use_color) rlutil::setColor(rlutil::LIGHTRED);

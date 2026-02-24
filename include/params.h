@@ -33,6 +33,10 @@ const Real MIN_SIGMA = 1e-10;
 const Real SIGMA_ADJUSTMENT_FACTOR = 0.5;
 const Real MIN_REJECTION_RATE = 1e-10;
 
+// SIMD vectorization alignment (bytes)
+const size_t SIMD_ALIGNMENT = 64;
+const size_t SIMD_LANES = 4;  // AVX2: 4 doubles per 256-bit register
+
 template <typename T>
 std::ostream & operator << (std::ostream &o, std::valarray<T> val)
 {

@@ -40,6 +40,8 @@ public:
     static constexpr uint64_t MIN = 0;
     static constexpr uint64_t MAX = UINT64_MAX;
     
+    Xoshiro256StarStar() : Xoshiro256StarStar(0) {}
+    
     explicit Xoshiro256StarStar(uint64_t seed) {
         SplitMix64 splitmix(seed);
         for (auto& s : state_) {

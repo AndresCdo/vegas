@@ -6,6 +6,7 @@
 #include "lattice.h"
 #include "reporter.h"
 #include "random.h"
+#include "simd_rng.h"
 #include "spin_model_tags.h"
 
 class System
@@ -80,6 +81,7 @@ private:
     std::vector<Array> magnetizationByTypeIndex_;
 
     vegas::Xoshiro256StarStar engine_;
+    vegas::SimdRNG<SIMD_LANES> simdEngine_;
     std::uniform_real_distribution<> realRandomGenerator_;
     std::uniform_int_distribution<> intRandomGenerator_;
     std::normal_distribution<> gaussianRandomGenerator_;

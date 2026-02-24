@@ -1,7 +1,11 @@
 #include "../include/system.h"
 #include "../include/random.h"
 #include "../include/spin_model_tags.h"
+#include "../include/starter.h"
 #include <hdf5.h>
+#if defined(__AVX2__) && defined(VEGAS_AVX2_EXPERIMENTAL)
+#include <immintrin.h>
+#endif
 #include <iostream>
 #include <iomanip>
 #include <cstdio>
@@ -12,6 +16,7 @@
 #include "../include/error.h"
 #include <functional>
 #include <stdexcept>
+#include <filesystem>
 
 // Message to exit and launch an error.
 
@@ -84,7 +89,7 @@ System::System(std::string fileName,
                Index seed,
                std::string outName,
                Real kb) : lattice_(fileName),
-                          engine_(0)
+                           engine_(0), simdEngine_(0)
 {
     this -> mcs_ = mcs;
     this -> thermalizationFraction_ = DEFAULT_THERMALIZATION_FRACTION;
@@ -113,6 +118,7 @@ System::System(std::string fileName,
     std::random_device rd;
     uint64_t base_seed = (seed != 0) ? static_cast<uint64_t>(seed) : rd();
     this -> engine_ = vegas::Xoshiro256StarStar(base_seed);
+    this -> simdEngine_ = vegas::SimdRNG<SIMD_LANES>(base_seed);
     this -> seed_ = seed;
 
     this -> sigma_ = std::vector<Real>(this -> num_types_);
@@ -126,6 +132,10 @@ System::System(std::string fileName,
     }
     this -> magnetizationByTypeIndex_.at(this -> num_types_) = ZERO; // for total magnetization
 
+    // Validate output path to prevent path traversal
+    if (outName.find("..") != std::string::npos) {
+        throw vegas::InvalidInputException("Output filename contains path traversal attempt: " + outName);
+    }
     std::remove(outName.c_str());
 
     // Initialize SoA from Atoms after lattice is loaded
@@ -159,7 +169,8 @@ System::System(System&& other) noexcept
       fields_(std::move(other.fields_)),
       outName_(std::move(other.outName_)),
       magnetizationByTypeIndex_(std::move(other.magnetizationByTypeIndex_)),
-      engine_(std::move(other.engine_)),
+       engine_(std::move(other.engine_)),
+       simdEngine_(std::move(other.simdEngine_)),
       realRandomGenerator_(std::move(other.realRandomGenerator_)),
       intRandomGenerator_(std::move(other.intRandomGenerator_)),
       gaussianRandomGenerator_(std::move(other.gaussianRandomGenerator_)),
@@ -188,6 +199,7 @@ System& System::operator=(System&& other) noexcept
         outName_ = std::move(other.outName_);
         magnetizationByTypeIndex_ = std::move(other.magnetizationByTypeIndex_);
         engine_ = std::move(other.engine_);
+        simdEngine_ = std::move(other.simdEngine_);
         realRandomGenerator_ = std::move(other.realRandomGenerator_);
         intRandomGenerator_ = std::move(other.intRandomGenerator_);
         gaussianRandomGenerator_ = std::move(other.gaussianRandomGenerator_);
@@ -295,82 +307,106 @@ template<>
 void System::monteCarloStepImpl<HeisenbergTag>(Real T, Real H)
 {
     Index N = this -> lattice_.getNumAtoms();
-    const Real* spin_x = lattice_.getSpinX();
-    const Real* spin_y = lattice_.getSpinY();
-    const Real* spin_z = lattice_.getSpinZ();
-    Real* spin_x_mut = lattice_.getSpinX();
-    Real* spin_y_mut = lattice_.getSpinY();
-    Real* spin_z_mut = lattice_.getSpinZ();
+    Real* __restrict spin_xyz = lattice_.getSpinXYZ();
     
     const std::vector<Index>& typeIndices = lattice_.getTypeIndices();
     const std::vector<Real>& spinNorms = lattice_.getSpinNorms();
-    const std::vector<Index>& neighborOffsets = lattice_.getNeighborOffsets();
-    const std::vector<NeighborInteraction>& flatNeighbors = lattice_.getFlatNeighbors();
+    const std::vector<Index>& soaNeighborOffsets = lattice_.getSoANeighborOffsets();
+    const Index* flatNeighborIds = lattice_.getFlatNeighborIds();
+    const Real* flatNeighborJs = lattice_.getFlatNeighborJs();
+    const std::vector<ColorBlock>& colorBlocks = lattice_.getColorBlocks();
+    Index numColors = lattice_.getNumColors();
+    const std::vector<Index>& globalToSoA = lattice_.getGlobalToSoA();
     
-    for (Index _ = 0; _ < N; ++_)
-    {
-        Index i = this -> intRandomGenerator_(this -> engine_);
-        Index typeIdx = typeIndices[i];
-        Real sigma = this -> sigma_.at(typeIdx);
+    // Random permutation of colors to avoid bias (optional)
+    std::vector<Index> colorOrder(numColors);
+    for (Index c = 0; c < numColors; ++c) colorOrder[c] = c;
+    std::shuffle(colorOrder.begin(), colorOrder.end(), engine_);
+    
+    for (Index colorIdx : colorOrder) {
+        const ColorBlock& block = colorBlocks[colorIdx];
+        Index blockSize = block.getSize();
+        const std::vector<Index>& blockAtomIndices = block.getAtomIndices();  // global indices
         
-        Real old_sx = spin_x[i];
-        Real old_sy = spin_y[i];
-        Real old_sz = spin_z[i];
-        
-        Index neighStart = neighborOffsets[i];
-        Index neighEnd = neighborOffsets[i + 1];
-        
-        // Heisenberg: full 3D dot product
-        Real oldEnergy = 0.0;
-        for (Index j = neighStart; j < neighEnd; ++j) {
-            Index nbh = flatNeighbors[j].id;
-            Real J = flatNeighbors[j].J;
-            oldEnergy -= J * (
-                old_sx * spin_x[nbh] + 
-                old_sy * spin_y[nbh] + 
-                old_sz * spin_z[nbh]
-            );
-        }
-        oldEnergy *= 0.5;
-        
-        // Heisenberg: 3D Gaussian perturbation
-        Real prop_sx = old_sx + sigma * this -> gaussianRandomGenerator_(this -> engine_);
-        Real prop_sy = old_sy + sigma * this -> gaussianRandomGenerator_(this -> engine_);
-        Real prop_sz = old_sz + sigma * this -> gaussianRandomGenerator_(this -> engine_);
-        
-        Real prop_norm = std::sqrt(prop_sx * prop_sx + prop_sy * prop_sy + prop_sz * prop_sz);
-        if (prop_norm > EPSILON) {
-            Real snorm = spinNorms[i];
-            prop_sx = snorm * prop_sx / prop_norm;
-            prop_sy = snorm * prop_sy / prop_norm;
-            prop_sz = snorm * prop_sz / prop_norm;
-        }
-        
-        spin_x_mut[i] = prop_sx;
-        spin_y_mut[i] = prop_sy;
-        spin_z_mut[i] = prop_sz;
-        
-        // Heisenberg energy
-        Real newEnergy = 0.0;
-        for (Index j = neighStart; j < neighEnd; ++j) {
-            Index nbh = flatNeighbors[j].id;
-            Real J = flatNeighbors[j].J;
-            newEnergy -= J * (
-                prop_sx * spin_x[nbh] + 
-                prop_sy * spin_y[nbh] + 
-                prop_sz * spin_z[nbh]
-            );
-        }
-        newEnergy *= 0.5;
-        
-        Real deltaEnergy = newEnergy - oldEnergy;
-        
-        if (deltaEnergy > 0 && this -> realRandomGenerator_(this -> engine_) > std::exp(- deltaEnergy / (this -> kb_ * T)))
-        {
-            spin_x_mut[i] = old_sx;
-            spin_y_mut[i] = old_sy;
-            spin_z_mut[i] = old_sz;
-            this -> counterRejections_.at(typeIdx) += 1;
+        // Process atoms in groups of SIMD_LANES
+        auto& simdEngine = this->simdEngine_;
+        for (Index blockPos = 0; blockPos < blockSize; blockPos += SIMD_LANES) {
+            Index laneCount = std::min(static_cast<Index>(SIMD_LANES), blockSize - blockPos);
+            
+            // Generate random numbers for each lane
+            auto gaussian1 = simdEngine.gaussian(); // array<Real, SIMD_LANES>
+            auto gaussian2 = simdEngine.gaussian();
+            auto gaussian3 = simdEngine.gaussian();
+            auto uniform = simdEngine.uniform();
+            
+            // Process each lane
+            for (Index lane = 0; lane < laneCount; ++lane) {
+                Index globalIdx = blockAtomIndices[blockPos + lane];
+                Index soaIdx = globalToSoA[globalIdx];
+                
+                Index typeIdx = typeIndices[soaIdx];
+                Real sigma = this -> sigma_.at(typeIdx);
+                
+                Real old_sx = spin_xyz[3*soaIdx];
+                Real old_sy = spin_xyz[3*soaIdx + 1];
+                Real old_sz = spin_xyz[3*soaIdx + 2];
+                
+                Index neighStart = soaNeighborOffsets[soaIdx];
+                Index neighEnd = soaNeighborOffsets[soaIdx + 1];
+                
+                // Heisenberg: full 3D dot product
+                Real oldEnergy = 0.0;
+                for (Index j = neighStart; j < neighEnd; ++j) {
+                    Index nbh = flatNeighborIds[j];
+                    Real J = flatNeighborJs[j];
+                    oldEnergy -= J * (
+                        old_sx * spin_xyz[3*nbh] + 
+                        old_sy * spin_xyz[3*nbh + 1] + 
+                        old_sz * spin_xyz[3*nbh + 2]
+                    );
+                }
+                oldEnergy *= 0.5;
+                
+                // Heisenberg: 3D Gaussian perturbation
+                Real prop_sx = old_sx + sigma * gaussian1[lane];
+                Real prop_sy = old_sy + sigma * gaussian2[lane];
+                Real prop_sz = old_sz + sigma * gaussian3[lane];
+                
+                Real prop_norm = std::sqrt(prop_sx * prop_sx + prop_sy * prop_sy + prop_sz * prop_sz);
+                if (prop_norm > EPSILON) {
+                    Real snorm = spinNorms[soaIdx];
+                    prop_sx = snorm * prop_sx / prop_norm;
+                    prop_sy = snorm * prop_sy / prop_norm;
+                    prop_sz = snorm * prop_sz / prop_norm;
+                }
+                
+                spin_xyz[3*soaIdx] = prop_sx;
+                spin_xyz[3*soaIdx + 1] = prop_sy;
+                spin_xyz[3*soaIdx + 2] = prop_sz;
+                
+                // Heisenberg energy
+                Real newEnergy = 0.0;
+                for (Index j = neighStart; j < neighEnd; ++j) {
+                    Index nbh = flatNeighborIds[j];
+                    Real J = flatNeighborJs[j];
+                    newEnergy -= J * (
+                         prop_sx * spin_xyz[3*nbh] + 
+                         prop_sy * spin_xyz[3*nbh + 1] + 
+                         prop_sz * spin_xyz[3*nbh + 2]
+                    );
+                }
+                newEnergy *= 0.5;
+                
+                Real deltaEnergy = newEnergy - oldEnergy;
+                
+                if (deltaEnergy > 0 && uniform[lane] > std::exp(- deltaEnergy / (this -> kb_ * T)))
+                {
+                    spin_xyz[3*soaIdx] = old_sx;
+                    spin_xyz[3*soaIdx + 1] = old_sy;
+                    spin_xyz[3*soaIdx + 2] = old_sz;
+                    this -> counterRejections_.at(typeIdx) += 1;
+                }
+            }
         }
     }
 }
@@ -380,54 +416,200 @@ template<>
 void System::monteCarloStepImpl<IsingTag>(Real T, Real H)
 {
     Index N = this -> lattice_.getNumAtoms();
-    const Real* spin_z = lattice_.getSpinZ();
-    Real* spin_z_mut = lattice_.getSpinZ();
+    Real* __restrict spin_z = lattice_.getSpinZ();
     
     const std::vector<Index>& typeIndices = lattice_.getTypeIndices();
     const std::vector<Real>& spinNorms = lattice_.getSpinNorms();
-    const std::vector<Index>& neighborOffsets = lattice_.getNeighborOffsets();
-    const std::vector<NeighborInteraction>& flatNeighbors = lattice_.getFlatNeighbors();
+    const std::vector<Index>& soaNeighborOffsets = lattice_.getSoANeighborOffsets();
+    const Index* flatNeighborIds = lattice_.getFlatNeighborIds();
+    const Real* flatNeighborJs = lattice_.getFlatNeighborJs();
+    const std::vector<ColorBlock>& colorBlocks = lattice_.getColorBlocks();
+    Index numColors = lattice_.getNumColors();
+    const std::vector<Index>& globalToSoA = lattice_.getGlobalToSoA();
     
-    for (Index _ = 0; _ < N; ++_)
-    {
-        Index i = this -> intRandomGenerator_(this -> engine_);
-        Index typeIdx = typeIndices[i];
+    // Random permutation of colors to avoid bias (optional)
+    std::vector<Index> colorOrder(numColors);
+    for (Index c = 0; c < numColors; ++c) colorOrder[c] = c;
+    std::shuffle(colorOrder.begin(), colorOrder.end(), engine_);
+    
+    for (Index colorIdx : colorOrder) {
+        const ColorBlock& block = colorBlocks[colorIdx];
+        Index blockSize = block.getSize();
+        const std::vector<Index>& blockAtomIndices = block.getAtomIndices();  // global indices
         
-        // Ising: only flip between +S and -S
-        Real snorm = spinNorms[i];
-        Real old_sz = spin_z[i];
-        int spin_sign = (old_sz > 0) ? 1 : -1;
-        Real prop_sz = -spin_sign * snorm;  // Flip direction
-        
-        Index neighStart = neighborOffsets[i];
-        Index neighEnd = neighborOffsets[i + 1];
-        
-        // Ising: only Z component energy
-        Real oldEnergy = 0.0;
-        for (Index j = neighStart; j < neighEnd; ++j) {
-            Index nbh = flatNeighbors[j].id;
-            Real J = flatNeighbors[j].J;
-            oldEnergy -= J * old_sz * spin_z[nbh];
-        }
-        oldEnergy *= 0.5;
-        
-        spin_z_mut[i] = prop_sz;
-        
-        // New energy with flipped spin
-        Real newEnergy = 0.0;
-        for (Index j = neighStart; j < neighEnd; ++j) {
-            Index nbh = flatNeighbors[j].id;
-            Real J = flatNeighbors[j].J;
-            newEnergy -= J * prop_sz * spin_z[nbh];
-        }
-        newEnergy *= 0.5;
-        
-        Real deltaEnergy = newEnergy - oldEnergy;
-        
-        if (deltaEnergy > 0 && this -> realRandomGenerator_(this -> engine_) > std::exp(- deltaEnergy / (this -> kb_ * T)))
-        {
-            spin_z_mut[i] = old_sz;  // Reject: restore old value
-            this -> counterRejections_.at(typeIdx) += 1;
+        // Process atoms in groups of SIMD_LANES
+        auto& simdEngine = this->simdEngine_;
+        for (Index blockPos = 0; blockPos < blockSize; blockPos += SIMD_LANES) {
+            Index laneCount = std::min(static_cast<Index>(SIMD_LANES), blockSize - blockPos);
+            
+            // Generate random numbers for each lane
+            auto uniform = simdEngine.uniform();
+            
+#if defined(__AVX2__) && defined(VEGAS_AVX2_EXPERIMENTAL)
+            // AVX2 experimental implementation for full vector (4 lanes)
+            if (laneCount == SIMD_LANES) {
+                // Load global indices for 4 atoms
+                Index globalIdx0 = blockAtomIndices[blockPos];
+                Index globalIdx1 = blockAtomIndices[blockPos + 1];
+                Index globalIdx2 = blockAtomIndices[blockPos + 2];
+                Index globalIdx3 = blockAtomIndices[blockPos + 3];
+                
+                // Convert to SoA indices
+                Index soaIdx0 = globalToSoA[globalIdx0];
+                Index soaIdx1 = globalToSoA[globalIdx1];
+                Index soaIdx2 = globalToSoA[globalIdx2];
+                Index soaIdx3 = globalToSoA[globalIdx3];
+                
+                // Load spin norms
+                __m256d snorm_vec = _mm256_set_pd(
+                    spinNorms[soaIdx3], spinNorms[soaIdx2], 
+                    spinNorms[soaIdx1], spinNorms[soaIdx0]
+                );
+                
+                // Load current spins
+                __m256d old_sz_vec = _mm256_set_pd(
+                    spin_z[soaIdx3], spin_z[soaIdx2],
+                    spin_z[soaIdx1], spin_z[soaIdx0]
+                );
+                
+                // Flip direction: prop_sz = -old_sz
+                __m256d prop_sz_vec = _mm256_mul_pd(old_sz_vec, _mm256_set1_pd(-1.0));
+                
+                // Get neighbor offsets for the 4 atoms
+                Index neighStart0 = soaNeighborOffsets[soaIdx0];
+                Index neighStart1 = soaNeighborOffsets[soaIdx1];
+                Index neighStart2 = soaNeighborOffsets[soaIdx2];
+                Index neighStart3 = soaNeighborOffsets[soaIdx3];
+                
+                // Assume uniform coordination (check first atom's count)
+                Index neighCount = soaNeighborOffsets[soaIdx0 + 1] - neighStart0;
+                
+                // Vectorized local field accumulation
+                __m256d h_local_vec = _mm256_setzero_pd();
+                
+                // Process each neighbor position
+                for (Index k = 0; k < neighCount; ++k) {
+                    // Gather neighbor indices for the 4 atoms
+                    __m256i neighbor_idx_vec = _mm256_set_epi64x(
+                        flatNeighborIds[neighStart3 + k],
+                        flatNeighborIds[neighStart2 + k],
+                        flatNeighborIds[neighStart1 + k],
+                        flatNeighborIds[neighStart0 + k]
+                    );
+                    
+                    // Gather neighbor spins
+                    __m256d neighbor_spin_vec = _mm256_i64gather_pd(
+                        spin_z, neighbor_idx_vec, 8
+                    );
+                    
+                    // Gather coupling constants J
+                    __m256d J_vec = _mm256_set_pd(
+                        flatNeighborJs[neighStart3 + k],
+                        flatNeighborJs[neighStart2 + k],
+                        flatNeighborJs[neighStart1 + k],
+                        flatNeighborJs[neighStart0 + k]
+                    );
+                    
+                    // Accumulate: h_local += J * neighbor_spin
+                    h_local_vec = _mm256_fmadd_pd(J_vec, neighbor_spin_vec, h_local_vec);
+                }
+                
+                // Compute deltaEnergy = 2 * old_sz * h_local
+                __m256d deltaEnergy_vec = _mm256_mul_pd(
+                    _mm256_mul_pd(_mm256_set1_pd(2.0), old_sz_vec),
+                    h_local_vec
+                );
+                
+                // Extract deltaEnergy to array for scalar exp
+                alignas(32) Real deltaEnergy_arr[4];
+                _mm256_store_pd(deltaEnergy_arr, deltaEnergy_vec);
+                
+                // Compute Boltzmann factors per lane (scalar)
+                Real kT = this -> kb_ * T;
+                Real boltzmann_arr[4];
+                for (int lane = 0; lane < 4; ++lane) {
+                    if (deltaEnergy_arr[lane] > 0.0) {
+                        boltzmann_arr[lane] = std::exp(-deltaEnergy_arr[lane] / kT);
+                    } else {
+                        boltzmann_arr[lane] = 1.0;  // Always accept if energy decreases
+                    }
+                }
+                
+                // Load uniform random numbers and boltzmann factors
+                __m256d uniform_vec = _mm256_set_pd(
+                    uniform[3], uniform[2], uniform[1], uniform[0]
+                );
+                __m256d boltzmann_vec = _mm256_load_pd(boltzmann_arr);
+                
+                // Acceptance condition:
+                // 1. deltaEnergy > 0 (energy increases)
+                // 2. uniform > boltzmann (reject with probability 1 - exp(-ΔE/kT))
+                __m256d zero = _mm256_setzero_pd();
+                __m256d condition1 = _mm256_cmp_pd(deltaEnergy_vec, zero, _CMP_GT_OQ);
+                __m256d condition2 = _mm256_cmp_pd(uniform_vec, boltzmann_vec, _CMP_GT_OQ);
+                __m256d reject_mask = _mm256_and_pd(condition1, condition2);
+                
+                // Create mask for store: where reject_mask is true, we restore old_sz
+                int mask = _mm256_movemask_pd(reject_mask);
+                
+                // Store proposed spins (will be overwritten for rejected lanes)
+                _mm256_store_pd(&spin_z[soaIdx0], prop_sz_vec);
+                
+                // Restore old spins for rejected moves
+                if (mask != 0) {
+                    // Blend old and new based on mask
+                    __m256d result_vec = _mm256_blendv_pd(prop_sz_vec, old_sz_vec, reject_mask);
+                    _mm256_store_pd(&spin_z[soaIdx0], result_vec);
+                    
+                    // Update rejection counts per atom type
+                    for (int lane = 0; lane < SIMD_LANES; ++lane) {
+                        if (mask & (1 << lane)) {
+                            Index soaIdx = (lane == 0) ? soaIdx0 :
+                                          (lane == 1) ? soaIdx1 :
+                                          (lane == 2) ? soaIdx2 : soaIdx3;
+                            Index typeIdx = typeIndices[soaIdx];
+                            this -> counterRejections_.at(typeIdx) += 1;
+                        }
+                    }
+                }
+                continue;  // Skip scalar loop
+            }
+#endif // defined(__AVX2__) && defined(VEGAS_AVX2_EXPERIMENTAL)
+            
+            // Scalar fallback for partial vectors or non-AVX2
+            for (Index lane = 0; lane < laneCount; ++lane) {
+                Index globalIdx = blockAtomIndices[blockPos + lane];
+                Index soaIdx = globalToSoA[globalIdx];
+                
+                Index typeIdx = typeIndices[soaIdx];
+                
+                // Ising: flip spin direction
+                Real old_sz = spin_z[soaIdx];
+                Real prop_sz = -old_sz;  // Flip direction
+                
+                Index neighStart = soaNeighborOffsets[soaIdx];
+                Index neighEnd = soaNeighborOffsets[soaIdx + 1];
+                
+                // Compute local field: h_local = Σ_{j neighbors} J * spin_z[nbh]
+                Real h_local = 0.0;
+                for (Index j = neighStart; j < neighEnd; ++j) {
+                    Index nbh = flatNeighborIds[j];
+                    Real J = flatNeighborJs[j];
+                    h_local += J * spin_z[nbh];
+                }
+                
+                // Energy change: ΔE = 2 * old_sz * h_local
+                Real deltaEnergy = 2.0 * old_sz * h_local;
+                
+                // Temporarily store proposed spin
+                spin_z[soaIdx] = prop_sz;
+                
+                if (deltaEnergy > 0 && uniform[lane] > std::exp(- deltaEnergy / (this -> kb_ * T)))
+                {
+                    spin_z[soaIdx] = old_sz;  // Reject: restore old value
+                    this -> counterRejections_.at(typeIdx) += 1;
+                }
+            }
         }
     }
 }
@@ -578,7 +760,13 @@ void System::adaptSigma()
     Index i = 0;
     for (auto& val : this -> counterRejections_)
     {
-        rejection = val / Real(this -> lattice_.getSizesByIndex().at(i));
+        Index size = this->lattice_.getSizesByIndex().at(i);
+        if (size == 0) {
+            // No atoms of this type, keep sigma unchanged
+            i++;
+            continue;
+        }
+        rejection = val / Real(size);
         // Avoid division by zero or very small rejection rates
         if (rejection < MIN_REJECTION_RATE)
         {
@@ -607,6 +795,7 @@ Index System::getSeed() const
 
 void System::setState(std::string fileState)
 {
+    STARTER::CHECKFILE(fileState);
     std::ifstream file(fileState);
 
     Array spin;
@@ -636,6 +825,7 @@ void System::setAnisotropies(std::vector<std::string> anisotropyfiles)
 {
     for (auto& fileName : anisotropyfiles)
     {
+        STARTER::CHECKFILE(fileName);
         std::ifstream file(fileName);
         for (Index i = 0; i < this -> lattice_.getAtoms().size(); ++i)
         {
@@ -746,6 +936,8 @@ void System::writeCheckpoint(std::string filename, Index tempIndex)
     }
     
     Index N = this -> lattice_.getNumAtoms();
+    // Ensure separate arrays are up-to-date (interleaved arrays are source of truth)
+    this -> lattice_.syncInterleavedToSeparate();
     hsize_t dims[1] = {static_cast<hsize_t>(N)};
     hid_t dataspace_id = H5Screate_simple(1, dims, NULL);
     
@@ -767,6 +959,30 @@ void System::writeCheckpoint(std::string filename, Index tempIndex)
     H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, spin_z);
     H5Dclose(dataset_id);
     
+    // Write mapping arrays for checkerboard decomposition
+    const std::vector<Index>& globalToSoA = lattice_.getGlobalToSoA();
+    const std::vector<Index>& soaToGlobal = lattice_.getSoAToGlobal();
+    const std::vector<Index>& atomColors = lattice_.getAtomColors();
+    
+    // Write globalToSoA
+    dataset_id = H5Dcreate2(group_id, "globalToSoA", H5T_NATIVE_UINT, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    if (dataset_id < 0) {
+        std::cerr << "[Warning] Failed to create globalToSoA dataset" << std::endl;
+    } else {
+        H5Dwrite(dataset_id, H5T_NATIVE_UINT, H5S_ALL, H5S_ALL, H5P_DEFAULT, globalToSoA.data());
+        H5Dclose(dataset_id);
+    }
+    
+    // Write soaToGlobal
+    dataset_id = H5Dcreate2(group_id, "soaToGlobal", H5T_NATIVE_UINT, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dataset_id, H5T_NATIVE_UINT, H5S_ALL, H5S_ALL, H5P_DEFAULT, soaToGlobal.data());
+    H5Dclose(dataset_id);
+    
+    // Write atomColors
+    dataset_id = H5Dcreate2(group_id, "atomColors", H5T_NATIVE_UINT, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dataset_id, H5T_NATIVE_UINT, H5S_ALL, H5S_ALL, H5P_DEFAULT, atomColors.data());
+    H5Dclose(dataset_id);
+    
     H5Sclose(dataspace_id);
     
     // Write RNG state
@@ -777,6 +993,15 @@ void System::writeCheckpoint(std::string filename, Index tempIndex)
     H5Dwrite(dataset_id, H5T_NATIVE_UINT64, H5S_ALL, H5S_ALL, H5P_DEFAULT, rngState.data());
     H5Dclose(dataset_id);
     H5Sclose(rng_space);
+    
+    // Write SIMD RNG state
+    auto simdRngState = this -> simdEngine_.getState();
+    hsize_t simd_dims[2] = {SIMD_LANES, 4};
+    hid_t simd_space = H5Screate_simple(2, simd_dims, NULL);
+    dataset_id = H5Dcreate2(group_id, "simd_rng_state", H5T_NATIVE_UINT64, simd_space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dataset_id, H5T_NATIVE_UINT64, H5S_ALL, H5S_ALL, H5P_DEFAULT, &(simdRngState[0][0]));
+    H5Dclose(dataset_id);
+    H5Sclose(simd_space);
     
     // Write temperature index
     hsize_t ti_dims[1] = {1};
@@ -885,12 +1110,79 @@ bool System::loadCheckpoint(std::string filename, Index& tempIndex)
     H5Sclose(dataspace_id);
     H5Dclose(dataset_id);
     
+    // Copy separate arrays to interleaved arrays (interleaved arrays are source of truth)
+    this -> lattice_.syncSeparateToInterleaved();
+    
+    // Read mapping arrays if present (checkpoint version 2)
+    const std::vector<Index>& latticeGlobalToSoA = lattice_.getGlobalToSoA();
+    const std::vector<Index>& latticeSoAToGlobal = lattice_.getSoAToGlobal();
+    const std::vector<Index>& latticeAtomColors = lattice_.getAtomColors();
+    
+    // Helper to check dataset existence
+    auto dataset_exists = [&](const char* name) -> bool {
+        return H5Lexists(group_id, name, H5P_DEFAULT) > 0;
+    };
+    
+    if (dataset_exists("globalToSoA") && dataset_exists("soaToGlobal") && dataset_exists("atomColors")) {
+        // Read mapping arrays
+        std::vector<Index> checkpointGlobalToSoA(N);
+        dataset_id = H5Dopen2(group_id, "globalToSoA", H5P_DEFAULT);
+        H5Dread(dataset_id, H5T_NATIVE_UINT, H5S_ALL, H5S_ALL, H5P_DEFAULT, checkpointGlobalToSoA.data());
+        H5Dclose(dataset_id);
+        
+        std::vector<Index> checkpointSoAToGlobal(N);
+        dataset_id = H5Dopen2(group_id, "soaToGlobal", H5P_DEFAULT);
+        H5Dread(dataset_id, H5T_NATIVE_UINT, H5S_ALL, H5S_ALL, H5P_DEFAULT, checkpointSoAToGlobal.data());
+        H5Dclose(dataset_id);
+        
+        std::vector<Index> checkpointAtomColors(N);
+        dataset_id = H5Dopen2(group_id, "atomColors", H5P_DEFAULT);
+        H5Dread(dataset_id, H5T_NATIVE_UINT, H5S_ALL, H5S_ALL, H5P_DEFAULT, checkpointAtomColors.data());
+        H5Dclose(dataset_id);
+        
+        // Verify mapping consistency
+        if (checkpointGlobalToSoA != latticeGlobalToSoA ||
+            checkpointSoAToGlobal != latticeSoAToGlobal ||
+            checkpointAtomColors != latticeAtomColors) {
+            throw vegas::SimulationException(
+                "Checkpoint mapping arrays differ from current lattice coloring. "
+                "Cannot resume with different graph coloring.");
+        }
+        // Mapping matches, proceed
+    } else {
+        // Old checkpoint (no mapping arrays). Assume identity mapping.
+        // Since we have already reordered data, the checkpoint spins are in original order.
+        // We need to reorder spins from original order to SoA order.
+        // This is a rare case; for simplicity, we reject.
+        throw vegas::SimulationException(
+            "Old checkpoint format detected (no mapping arrays). "
+            "Cannot resume with checkerboard decomposition. Please start a new simulation.");
+    }
+    
     // Read RNG state
     std::array<uint64_t, 4> rngState;
     dataset_id = H5Dopen2(group_id, "rng_state", H5P_DEFAULT);
     H5Dread(dataset_id, H5T_NATIVE_UINT64, H5S_ALL, H5S_ALL, H5P_DEFAULT, rngState.data());
     this -> engine_.setState(rngState);
     H5Dclose(dataset_id);
+    
+    // Read SIMD RNG state (checkpoint version 3)
+    if (dataset_exists("simd_rng_state")) {
+        std::array<std::array<uint64_t, 4>, SIMD_LANES> simdRngState;
+        dataset_id = H5Dopen2(group_id, "simd_rng_state", H5P_DEFAULT);
+        H5Dread(dataset_id, H5T_NATIVE_UINT64, H5S_ALL, H5S_ALL, H5P_DEFAULT, &(simdRngState[0][0]));
+        this -> simdEngine_.setState(simdRngState);
+        H5Dclose(dataset_id);
+    } else {
+        // Old checkpoint: reconstruct SIMD RNG from scalar RNG state
+        vegas::Xoshiro256StarStar temp = this -> engine_; // copy
+        std::array<std::array<uint64_t, 4>, SIMD_LANES> laneStates;
+        for (size_t i = 0; i < SIMD_LANES; ++i) {
+            laneStates[i] = temp.getState();
+            temp.jump();
+        }
+        this -> simdEngine_.setState(laneStates);
+    }
     
     // Read temperature index
     int tempIdx = 0;

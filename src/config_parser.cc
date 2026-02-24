@@ -1,5 +1,6 @@
 #include "../include/config_parser.h"
 #include "../include/exception.h"
+#include "../include/starter.h"
 
 #include <fstream>
 #include <ctime>
@@ -39,6 +40,7 @@ SimulationConfig ConfigParser::parse(const std::string& jsonFile) {
     SimulationConfig config;
     
     // Parse JSON file
+    STARTER::CHECKFILE(jsonFile);
     Json::Value root;
     Json::Reader reader;
     std::ifstream file(jsonFile, std::ifstream::binary);
@@ -181,6 +183,7 @@ void ConfigParser::validate(const SimulationConfig& config) {
         throw vegas::InvalidInputException("Sample file not specified");
     }
     
+    STARTER::CHECKFILE(config.sampleFile);
     std::ifstream infile(config.sampleFile);
     if (!infile.good()) {
         throw vegas::FileIOException("Cannot open sample file: " + config.sampleFile);
@@ -210,6 +213,7 @@ void ConfigParser::validate(const SimulationConfig& config) {
     
     // Check initial state file if specified
     if (config.hasInitialState && !config.initialStateFile.empty()) {
+        STARTER::CHECKFILE(config.initialStateFile);
         std::ifstream stateFile(config.initialStateFile);
         if (!stateFile.good()) {
             throw vegas::FileIOException("Cannot open initial state file: " + config.initialStateFile);
@@ -218,6 +222,7 @@ void ConfigParser::validate(const SimulationConfig& config) {
     
     // Check anisotropy files if specified
     for (const auto& file : config.anisotropyFiles) {
+        STARTER::CHECKFILE(file);
         std::ifstream anisoFile(file);
         if (!anisoFile.good()) {
             throw vegas::FileIOException("Cannot open anisotropy file: " + file);

@@ -15,7 +15,8 @@ VEGAS (VEctor General Atomistic Simulator) is a software package for simulation,
 - **Parallelization**: Trivially parallelizable across temperature/field sweeps via independent processes
 - **Sanitizer Support**: ASan/UBSan integration for memory safety verification
 - **Physical Validation**: Comprehensive benchmark suite with exact solutions
-- **High Performance**: SoA data layout, template dispatch, Xoshiro256** RNG (60% Ising speedup)
+- **Advanced Optimizations**: Checkerboard decomposition, SIMD‑ready block reordering, RNG pre‑generation (9‑19% speedup)
+- **High Performance**: SoA data layout, template dispatch, Xoshiro256** RNG (60% Ising speedup), checkerboard decomposition with block reordering (9‑19% speedup)
 
 ## Installation
 
@@ -423,7 +424,7 @@ This approach ensures proper equilibrium sampling with fixed transition probabil
 
 ### Benchmarks
 
-Typical performance on a modern CPU (v2.4.0 with SoA and Template Dispatch):
+Typical performance on a modern CPU (v2.5.0 with checkerboard decomposition):
 
 | System | Model | Time | Steps/sec |
 |--------|-------|------|-----------|
@@ -432,10 +433,11 @@ Typical performance on a modern CPU (v2.4.0 with SoA and Template Dispatch):
 | 400 atoms | Ising | 8.3s | 24,000 |
 | 400 atoms | Heisenberg | ~21s | 9,500 |
 
-**Performance Improvements (v2.4.0)**:
-- Ising models: **60% faster** with template specialization
-- Heisenberg models: Same performance with improved cache efficiency
-- SoA data layout eliminates pointer chasing
+**Performance Improvements (v2.5.0)**:
+- Ising models: **19.4% faster** with block‑ordered SoA (cache locality)
+- Heisenberg models: **9.4% faster** with block‑ordered SoA
+- Graph coloring enables non‑bipartite lattices (triangular, Kagome)
+- Per‑lane SIMD RNG eliminates false sharing
 - Register rollback reduces memory writes
 
 ### I/O Scaling
@@ -533,6 +535,7 @@ See [benchmarks/VALIDATION_REPORT.md](benchmarks/VALIDATION_REPORT.md) for detai
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v2.5.0 | 2026-02-23 | **Checkerboard & Cache**: Graph coloring, block‑ordered SoA, per‑lane SIMD RNG, 9‑19% speedup via cache locality, "Gather Wall" identified |
 | v2.4.0 | 2026-02-23 | SoA refactor, Template Dispatch, Xoshiro256** RNG, 60% Ising speedup |
 | v2.3.2 | 2026-02-23 | I/O scaling profiling, RNG infrastructure |
 | v2.3.1 | 2026-02-23 | ASan/UBSan integration, documentation fixes |
