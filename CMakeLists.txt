@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(vegas LANGUAGES CXX C)
 find_package(jsoncpp CONFIG QUIET)
 find_package(JsonCpp CONFIG QUIET)
-find_package(HDF5 CONFIG REQUIRED COMPONENTS CXX)
+find_package(HDF5 REQUIRED COMPONENTS CXX)
 set(JSONCPP_TARGET "")
 if (TARGET jsoncpp::jsoncpp)
     set(JSONCPP_TARGET jsoncpp::jsoncpp)
@@ -21,4 +21,5 @@ target_sources(
     ./src/system.cc
     ./src/starter.cc
 )
-target_link_libraries(vegas PRIVATE ${JSONCPP_TARGET} hdf5::hdf5_cpp)
+target_include_directories(vegas PRIVATE ${HDF5_INCLUDE_DIRS})
+target_link_libraries(vegas PRIVATE ${JSONCPP_TARGET} ${HDF5_LIBRARIES})
